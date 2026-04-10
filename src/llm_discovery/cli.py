@@ -1,7 +1,11 @@
 """Typer CLI for LLM Document Discovery pipeline."""
 
+from pathlib import Path
+
 import typer
 from rich import print as rprint
+
+from llm_discovery.fetch import fetch_corpus
 
 app = typer.Typer(
     name="llm-discovery",
@@ -12,10 +16,27 @@ app = typer.Typer(
 @app.command()
 def fetch(
     urls: list[str] = typer.Argument(None, help="Internet Archive URLs to fetch (defaults to 5 demo URLs)"),
+    output_dir: Path = typer.Option(
+        "input/demo_corpus", help="Directory to write markdown files to"
+    ),
 ) -> None:
-    """Download WARC records from the Internet Archive and convert to markdown."""
-    rprint("[yellow]fetch: not yet implemented[/yellow]")
-    raise typer.Exit(1)
+    """Download pages from the Internet Archive and convert to markdown."""
+    url_list = urls if urls else None
+    count = len(urls) if urls else 5
+    rprint(f"[bold]Fetching {count} documents from Internet Archive...[/bold]")
+
+    try:
+        written = fetch_corpus(url_list, output_dir)
+    except RuntimeError as exc:
+        rprint(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+
+    skipped = count - len(written)
+    rprint(
+        f"[green]Done.[/green] Fetched {len(written)}, skipped {skipped}."
+    )
+    if not written and skipped:
+        rprint("[dim]All files already existed — nothing to do.[/dim]")
 
 
 @app.command()

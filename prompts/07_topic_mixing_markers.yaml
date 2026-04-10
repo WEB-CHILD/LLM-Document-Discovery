@@ -1,0 +1,8 @@
+id: 7
+name: topic_mixing_markers
+description: Sudden topic shifts within single passages
+prompt: |
+  Extract text containing sudden topic shifts within single passages related to children, hobbies and school.
+  Example patterns: "my dog is brown and tomorrow is saturday and i like pizza", "jeg kan godt lide skole, men det er bedre at have ferie", "på billedet har jeg pagehår men der var jeg også kun 9 år"
+
+  Analyze the following document and extract matching passages:

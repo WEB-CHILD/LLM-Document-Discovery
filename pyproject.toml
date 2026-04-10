@@ -1,0 +1,43 @@
+[project]
+name = "llm-discovery"
+version = "0.1.0"
+description = "Reproducible pipeline for classifying historical web documents using LLMs"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "CC-BY-4.0"
+dependencies = [
+    "typer>=0.12.0",
+    "rich>=14.0.0",
+    "warcio>=1.7.0",
+    "markdownify>=0.13.0",
+    "requests>=2.32.0",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "datasette>=0.65.1",
+    "langchain-text-splitters>=1.1.0",
+    "openai>=2.7.1",
+]
+
+[project.optional-dependencies]
+gpu = [
+    "vllm>=0.11.0",
+]
+dev = [
+    "pytest>=9.0.1",
+]
+
+[project.scripts]
+llm-discovery = "llm_discovery.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+sources = ["src"]
+
+[tool.pytest.ini_options]
+markers = [
+    "gpu: marks tests requiring GPU (deselect with '-m \"not gpu\"')",
+]
+testpaths = ["tests"]

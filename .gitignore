@@ -1,0 +1,35 @@
+# Data files
+*.db
+*.jsonl
+input/
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+dist/
+build/
+*.egg-info/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment
+.env
+.envrc
+
+# Syncthing
+.stfolder/
+
+# Worktrees
+.worktrees/
+
+# IDE
+.vscode/
+.idea/

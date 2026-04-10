@@ -1,0 +1,7 @@
+id: 20
+name: computer_culture
+description: References to computers and video games
+prompt: |
+  Extract text containing references to computers and video games: "snydekoder", "cheat codes", "mods", "LAN party", "multiplayer", "RPG", "first-person shooter", "Doom", "Wolfenstein", "Counter-Strike", "Phantasmagoria", "Diablo", "Warcraft", "Legend of Zelda", "Pokemon", "GTA", World of Warcraft", "Fallout", "Starcraft", "The Sims", "Sid Meier's Civilization II", "Quake", "Final Fantasy", "lav din egen hjemmeside", "create your own website", "create your own homepage"
+    
+  Analyze the following document and extract matching passages:

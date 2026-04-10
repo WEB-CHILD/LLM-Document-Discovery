@@ -1,0 +1,10 @@
+id: 11
+name: interactive_element_text
+description: Button labels, form text, interactive prompts
+prompt: |
+  Extract text from or near interactive elements:
+  - Submit/button text: "submit", "send", "go", "enter", "send", "navn", "제출", "이름"
+  - Form labels: "name:", "your email:",
+  - JavaScript alerts or prompts in HTML
+
+  Analyze the following document and extract matching passages:

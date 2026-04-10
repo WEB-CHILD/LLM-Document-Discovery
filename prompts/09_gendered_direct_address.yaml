@@ -1,0 +1,10 @@
+id: 9
+name: gendered_direct_address
+description: Direct address with gendered terms (boys/girls)
+prompt: |
+  Extract text containing direct address with: "boys", "girls", "drenge", "piger", "소년", "소녀", "tøzer", "tøzzer", "tøz", "dreng", "pige", "dudes", "girlz", "girls", "girl", "boy", "homie", 
+  Must be addressing reader, not describing: "Hey boys" not "books about boys"
+
+  Do not extract gender neutral terms.
+  
+  Analyze the following document and extract matching passages:

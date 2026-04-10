@@ -1,0 +1,9 @@
+id: 8
+name: age_identity_claims
+description: Self-reported ages, grade references
+prompt: |
+  Extract text containing: "I am [number]", "I'm [number]", "jeg er [number]", "vi er [number]", "years old", "år gammel", "år gamle", "살이에요"
+  Include: "my age", "we are", "grade", "klasse", "학년"
+  Include abbreviations: "m/[number]", "f/[number]"
+
+  Analyze the following document and extract matching passages:

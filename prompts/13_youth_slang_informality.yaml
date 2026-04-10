@@ -1,0 +1,11 @@
+id: 13
+name: youth_slang_informality
+description: Informal expressions, slang, emoticons
+prompt: |
+  Extract informal expressions:
+  - Intensifiers: "totally", "super", "mega", "way cool", "amazing", "wow", "waow"
+  - Positive slang: "awesome", "rad", "sick", "tight", "phat", "fed", "fedt", "sejt", "대박", "cool", "kodylt", "freak"
+  - Emoticons: ":)", ":(", "^_^", ":-)", ":-("
+  - Text abbreviations: "lol", "omg", "brb", "idk", "tbh", "smh", "ㅋㅋ", "ㅎㅎ", "*g*", "*gg*", "*s*", "*ss*"
+
+  Analyze the following document and extract matching passages:

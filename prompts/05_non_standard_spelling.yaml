@@ -1,0 +1,13 @@
+id: 5
+name: non_standard_spelling
+description: Phonetic spellings, number substitutions, repeated letters
+prompt: |
+  Extract text with:
+  - Phonetic substitutions: "2" for "to", "4" for "for", "u" for "you", "r" for "are", "l8r" for "later", "gr8" for "great", "cya" for "see you"
+  - Phonetic spellings: "kool", "wuz", "cuz", "plz", "tøz", "møz", "xo", "xoxo", "xx"
+  - Multiple repeated letters: "coooool", "yesssss", "jaaaaaa", "heyyyyyy"
+  - Mixed case in single words: "PoKeMoN", "SpOnGeBoB"
+
+  Do not match filenames, website titles or links. In general only extract prose text.
+
+  Analyze the following document and extract matching passages:

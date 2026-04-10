@@ -15,7 +15,8 @@ CREATE TABLE result (
   FOREIGN KEY (parent_result_id) REFERENCES result(result_id)
 );
 
--- Category definitions (prompts from POC-prompts/)
+-- Category definitions (loaded from prompts/*.yaml)
+-- YAML key mapping: name -> category_name, description -> category_description
 CREATE TABLE category (
   category_id INTEGER PRIMARY KEY AUTOINCREMENT,  -- Sequential: 1, 2, 3...
   category_filename TEXT NOT NULL,                -- e.g., "01_imperative_verbs.yaml"

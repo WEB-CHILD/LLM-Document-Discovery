@@ -10,27 +10,45 @@ Reproducible pipeline for classifying historical web documents (1996-2005) using
 - GPU access (local or HPC) -- Gemma 4 works for local testing on modest GPUs
 - For HPC: SSH access to NCI Gadi or DeiC UCloud
 
-## Quickstart
+## Quickstart (local GPU)
 
 ```bash
 git clone <repo-url>
 cd LLM-Document-Discovery
 uv sync
-uv run llm-discovery run --platform local --yes    # Fetches demo pages + full pipeline
-datasette corpus.db                                 # Browse results
+
+# Install vLLM nightly (required for Gemma 4, not managed by uv sync)
+uv pip install -U vllm --pre \
+  --extra-index-url https://wheels.vllm.ai/nightly/cu129 \
+  --extra-index-url https://download.pytorch.org/whl/cu129 \
+  --index-strategy unsafe-best-match
+uv pip install transformers==5.5.0
+
+# Run the full pipeline (RTX 4090 example)
+uv run llm-discovery run --platform local --gpu-type RTX4090 --yes
+
+# Browse results
+uv run datasette corpus.db
 ```
 
-For HPC deployment (Gadi):
+GPU types are configured in `config/machines.yaml`. Available types: `RTX4090`, `V100`, `H200`, `H100`. Each selects the appropriate model and vLLM parameters automatically.
+
+### Verify results
+
+```bash
+sqlite3 corpus.db "SELECT COUNT(*) FROM result_category"                    # expect: 105
+sqlite3 corpus.db "SELECT COUNT(DISTINCT category_id) FROM result_category" # expect: 21
+sqlite3 corpus.db "SELECT DISTINCT match FROM result_category"              # expect: yes/maybe/no
+sqlite3 corpus.db "SELECT model, pairs_processed FROM run_stats"            # verify model name
+```
+
+### HPC deployment (Gadi)
 
 ```bash
 uv run llm-discovery run --platform gadi --project <code> --yes
 ```
 
-For local testing with a smaller model:
-
-```bash
-VLLM_MODEL=google/gemma-4-E4B-it uv run llm-discovery run --platform local --yes
-```
+See [docs/testing-plan-local-4090.md](docs/testing-plan-local-4090.md) for the full tier-by-tier testing plan.
 
 ## CLI Reference
 

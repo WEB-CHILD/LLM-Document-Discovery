@@ -9,9 +9,9 @@
 
 1. In UCloud, create a new **Terminal App** job.
 2. Select resources:
-   - GPU: H100, 4 GPUs
-   - CPU: 48 cores (recommended)
-   - Memory: 380 GB (recommended)
+   - GPU: H100, 2 GPUs
+   - CPU: 24 cores (recommended)
+   - Memory: 190 GB (recommended)
 3. Mount `/work/llm-discovery` as the working directory.
 
 ## Code Transfer

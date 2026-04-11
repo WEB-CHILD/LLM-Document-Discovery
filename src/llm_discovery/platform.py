@@ -186,7 +186,7 @@ def submit_ucloud_job(_platform: PlatformConfig) -> str | None:
             "Manual steps:\n"
             "1. Open UCloud web portal at [link]https://cloud.sdu.dk[/link]\n"
             "2. Create a new Terminal App job\n"
-            "3. Select GPU: H100, 4 GPUs\n"
+            "3. Select GPU: H100, 2 GPUs\n"
             "4. Mount /work/llm-discovery\n"
             "5. In terminal, run: [bold]bash scripts/process_corpus.sh[/bold]",
             title="UCloud Manual Submission",

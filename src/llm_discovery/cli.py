@@ -162,33 +162,94 @@ def validate(
 
 @app.command()
 def deploy(
-    platform: str = typer.Option(..., help="HPC platform to deploy to: gadi or ucloud"),
+    platform: str = typer.Option(..., help="HPC platform: gadi or ucloud"),
     project: str = typer.Option(None, help="NCI project code (for Gadi)"),
+    gpu_queue: str = typer.Option("gpuhopper", help="Gadi GPU queue: gpuhopper or gpuvolta"),
 ) -> None:
     """Sync code to HPC and submit job."""
+    from llm_discovery.platform import (
+        load_platforms,
+        rsync_to_remote,
+        submit_gadi_job,
+        submit_ucloud_job,
+    )
+
     if not _ensure_validated(platform, project):
         rprint("[yellow]Validation failed — fix issues before deploying[/yellow]")
         raise typer.Exit(1)
-    rprint("[yellow]deploy: not yet implemented[/yellow]")
-    raise typer.Exit(1)
+
+    config_path = Path("config/platforms.yaml")
+    platforms = load_platforms(config_path)
+    platform_config = platforms.platforms[platform]
+
+    # Rsync code to remote (if SSH available)
+    if platform_config.ssh_host:
+        rprint(f"[bold]Syncing code to {platform_config.display_name}...[/bold]")
+        rsync_to_remote(platform_config, Path("."), project or "")
+
+    # Submit job
+    if platform == "gadi":
+        if not project:
+            rprint("[red]Error: --project is required for Gadi deployment[/red]")
+            raise typer.Exit(1)
+        rprint(f"[bold]Submitting PBS job to {gpu_queue} queue...[/bold]")
+        job_id = submit_gadi_job(platform_config, project, gpu_queue)
+        rprint(f"[green]Job submitted: {job_id}[/green]")
+        rprint(f"[dim]Check status: llm-discovery status --platform gadi --job-id {job_id}[/dim]")
+    elif platform == "ucloud":
+        submit_ucloud_job(platform_config)
+    else:
+        rprint(f"[red]Deploy not supported for platform: {platform}[/red]")
+        raise typer.Exit(1)
 
 
 @app.command()
 def status(
-    platform: str = typer.Option(..., help="HPC platform to check: gadi or ucloud"),
+    platform: str = typer.Option(..., help="HPC platform: gadi or ucloud"),
+    job_id: str = typer.Option(None, help="Job ID to check"),
+    project: str = typer.Option(None, help="NCI project code"),
 ) -> None:
     """Check status of running HPC job."""
-    rprint("[yellow]status: not yet implemented[/yellow]")
-    raise typer.Exit(1)
+    from llm_discovery.platform import check_job_status, load_platforms
+
+    config_path = Path("config/platforms.yaml")
+    platforms = load_platforms(config_path)
+    if platform not in platforms.platforms:
+        rprint(f"[red]Unknown platform: {platform}[/red]")
+        raise typer.Exit(1)
+    platform_config = platforms.platforms[platform]
+
+    if not job_id:
+        rprint("[red]Error: --job-id is required[/red]")
+        raise typer.Exit(1)
+
+    result = check_job_status(platform_config, job_id, project)
+    rprint(f"Job {job_id}: [bold]{result}[/bold]")
 
 
 @app.command()
 def retrieve(
-    platform: str = typer.Option(..., help="HPC platform to retrieve from: gadi or ucloud"),
+    platform: str = typer.Option(..., help="HPC platform: gadi or ucloud"),
+    project: str = typer.Option(None, help="NCI project code"),
+    output: Path = typer.Option("corpus.db", help="Local path for retrieved database"),
 ) -> None:
     """Pull results (corpus.db) back from HPC."""
-    rprint("[yellow]retrieve: not yet implemented[/yellow]")
-    raise typer.Exit(1)
+    from llm_discovery.platform import load_platforms, retrieve_results
+
+    config_path = Path("config/platforms.yaml")
+    platforms = load_platforms(config_path)
+    if platform not in platforms.platforms:
+        rprint(f"[red]Unknown platform: {platform}[/red]")
+        raise typer.Exit(1)
+    platform_config = platforms.platforms[platform]
+
+    if not project:
+        rprint("[red]Error: --project is required for retrieval[/red]")
+        raise typer.Exit(1)
+
+    rprint(f"[bold]Retrieving corpus.db from {platform_config.display_name}...[/bold]")
+    local_path = retrieve_results(platform_config, output, project)
+    rprint(f"[green]Retrieved to: {local_path}[/green]")
 
 
 @app.command()

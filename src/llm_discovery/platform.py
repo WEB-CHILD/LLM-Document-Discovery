@@ -1,11 +1,14 @@
 """Platform configuration and validation for HPC deployment."""
 
+import io
+import subprocess
 from pathlib import Path
 
 import yaml
 from fabric import Connection
 from pydantic import BaseModel
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
 
 console = Console()
@@ -111,3 +114,100 @@ def display_validation_results(
 
     console.print(table)
     return all_passed
+
+
+def rsync_to_remote(platform: PlatformConfig, local_dir: Path, project: str) -> None:
+    """Rsync code to remote HPC. No --delete to protect model cache."""
+    if platform.ssh_host is None:
+        raise RuntimeError(f"Platform {platform.display_name} has no SSH host — cannot rsync")
+    remote_path = resolve_remote_path(platform, project)
+    subprocess.run(
+        [
+            "rsync", "-avz",
+            "--exclude=.venv/", "--exclude=__pycache__/",
+            "--exclude=*.db", "--exclude=*.pyc",
+            "--exclude=.git/", "--exclude=input/",
+            "--exclude=out/", "--exclude=*.log",
+            str(local_dir) + "/",
+            f"{platform.ssh_host}:{remote_path}/",
+        ],
+        check=True,
+    )
+
+
+def submit_gadi_job(
+    platform: PlatformConfig, project: str, gpu_queue: str = "gpuhopper"
+) -> str:
+    """Submit PBS job to Gadi. Returns job ID."""
+    template_path = Path("hpc/gadi.pbs.template")
+    if not template_path.exists():
+        raise FileNotFoundError(f"PBS template not found: {template_path}")
+
+    template = template_path.read_text()
+    pbs_script = template.replace("{{GPU_QUEUE}}", gpu_queue).replace("{{NCI_PROJECT}}", project)
+
+    remote_path = resolve_remote_path(platform, project)
+    conn = Connection(platform.ssh_host)
+
+    # Upload the concrete PBS script
+    conn.put(io.StringIO(pbs_script), f"{remote_path}/gadi.pbs")
+
+    # Submit
+    result = conn.run(f"cd {remote_path} && qsub gadi.pbs", hide=True)
+    job_id = result.stdout.strip()
+    return job_id
+
+
+def submit_ucloud_job(platform: PlatformConfig) -> str | None:
+    """Submit UCloud job. Returns None (manual submission required)."""
+    console.print(Panel(
+        "[bold]UCloud automated submission not available.[/bold]\n\n"
+        "Manual steps:\n"
+        "1. Open UCloud web portal at [link]https://cloud.sdu.dk[/link]\n"
+        "2. Create a new Terminal App job\n"
+        "3. Select GPU: H100, 4 GPUs\n"
+        "4. Mount /work/llm-discovery\n"
+        "5. In terminal, run: [bold]bash scripts/process_corpus.sh[/bold]",
+        title="UCloud Manual Submission",
+        border_style="yellow",
+    ))
+    return None
+
+
+def retrieve_results(
+    platform: PlatformConfig, local_path: Path, project: str
+) -> Path:
+    """Rsync corpus.db from remote to local."""
+    if platform.ssh_host is None:
+        raise RuntimeError(f"Platform {platform.display_name} has no SSH host — cannot retrieve")
+    remote_path = resolve_remote_path(platform, project)
+    subprocess.run(
+        [
+            "rsync", "-avz",
+            f"{platform.ssh_host}:{remote_path}/corpus.db",
+            str(local_path),
+        ],
+        check=True,
+    )
+    return local_path
+
+
+def check_job_status(
+    platform: PlatformConfig, job_id: str, project: str | None = None
+) -> str:
+    """Check job status on HPC. Returns status string."""
+    if platform.ssh_host is None:
+        return "unknown (no SSH)"
+    conn = Connection(platform.ssh_host)
+    result = conn.run(f"qstat {job_id}", warn=True, hide=True)
+    if not result.ok:
+        return "completed or not found"
+    # Parse qstat output for status column
+    for line in result.stdout.strip().split("\n"):
+        if job_id.split(".")[0] in line:
+            parts = line.split()
+            if len(parts) >= 5:
+                status_code = parts[-2]
+                status_map = {"Q": "queued", "R": "running", "F": "finished", "E": "exiting"}
+                return status_map.get(status_code, status_code)
+    return "unknown"

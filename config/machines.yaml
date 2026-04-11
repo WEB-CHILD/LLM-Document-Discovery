@@ -1,0 +1,31 @@
+# vLLM parameters per GPU type
+# Used by scripts/start_server.sh to configure tensor parallelism,
+# memory utilisation, and concurrency limits.
+
+gpu_types:
+  V100:
+    tensor_parallel_size: 4
+    gpu_memory_utilization: 0.90
+    max_num_seqs: 64
+    notes: "NCI Gadi gpuvolta queue"
+
+  A100:
+    tensor_parallel_size: 4
+    gpu_memory_utilization: 0.92
+    max_num_seqs: 128
+    notes: "NCI Gadi dgxa100 queue"
+
+  H100:
+    tensor_parallel_size: 4
+    gpu_memory_utilization: 0.92
+    max_num_seqs: 384
+    notes: "UCloud or similar"
+
+  H200:
+    tensor_parallel_size: 4
+    gpu_memory_utilization: 0.92
+    max_num_seqs: 384
+    notes: "NCI Gadi H200 queue"
+
+# Default model
+default_model: "mistralai/gpt-oss-120b"

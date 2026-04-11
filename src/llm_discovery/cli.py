@@ -104,7 +104,7 @@ def process(
     server_url: str = typer.Option("http://localhost:8000", help="vLLM server URL"),
     concurrency: int = typer.Option(128, help="Number of concurrent workers"),
     limit: int = typer.Option(None, help="Limit number of pairs to process"),
-    model: str = typer.Option("openai/gpt-oss-20b", help="Model name"),
+    model: str = typer.Option("openai/gpt-oss-120b", help="Model name"),
 ) -> None:
     """Run LLM classification on unprocessed document-category pairs."""
     if not db.exists():
@@ -305,10 +305,10 @@ def _run_local_pipeline(
         default_model = (
             model
             or gpu_params.get("model")
-            or machines.get("default_model", "openai/gpt-oss-20b")
+            or machines.get("default_model", "openai/gpt-oss-120b")
         )
     else:
-        default_model = model or "openai/gpt-oss-20b"
+        default_model = model or "openai/gpt-oss-120b"
         gpu_params = {
             "tensor_parallel_size": 1,
             "gpu_memory_utilization": 0.90,

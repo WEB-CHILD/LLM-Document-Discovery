@@ -80,7 +80,7 @@ def run_local_pipeline(
     prompts_dir: Path,
     server_url: str,
     system_prompt_path: Path,
-    model: str = "openai/gpt-oss-20b",
+    model: str = "openai/gpt-oss-120b",
 ) -> None:
     """Run the full pipeline locally: prep-db -> preflight -> process -> import."""
     schema_path = Path("schema.sql")

@@ -662,7 +662,7 @@ def run_processor(
     system_prompt_path: Path,
     concurrency: int = 128,
     limit: int | None = None,
-    model: str = "openai/gpt-oss-20b",
+    model: str = "openai/gpt-oss-120b",
     prompts_dir: Path | None = None,
 ) -> dict:
     """Run the streaming processor. Returns stats dict."""

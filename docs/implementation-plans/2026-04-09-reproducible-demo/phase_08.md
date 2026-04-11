@@ -57,7 +57,7 @@ Structure the README with these sections:
 
    Include a "Local testing with smaller model" section:
    ```bash
-   VLLM_MODEL=google/gemma-4-12b llm-discovery run --platform local --yes
+   VLLM_MODEL=google/gemma-4-E4B-it llm-discovery run --platform local --yes
    ```
 
 4. **CLI Reference:** Table of all subcommands with brief descriptions and key options.

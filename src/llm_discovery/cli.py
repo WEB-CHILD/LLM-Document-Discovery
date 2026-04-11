@@ -417,7 +417,7 @@ def run(
     ),
     model: str = typer.Option(
         None,
-        help="Override model name (e.g., google/gemma-4-12b)",
+        help="Override model name (e.g., google/gemma-4-E4B-it)",
     ),
     gpu_type: str = typer.Option(
         None,

@@ -62,7 +62,7 @@ gpu_types:
     notes: "NCI Gadi H200 queue"
 
 # Default model
-default_model: "mistralai/gpt-oss-120b"
+default_model: "openai/gpt-oss-120b"
 ```
 
 Verify exact values against FirstRun's configuration. The tensor_parallel_size, gpu_memory_utilization, and max_num_seqs values are tuned from production experience.

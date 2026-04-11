@@ -29,7 +29,7 @@ uv run llm-discovery run --platform gadi --project <code> --yes
 For local testing with a smaller model:
 
 ```bash
-VLLM_MODEL=google/gemma-4-12b uv run llm-discovery run --platform local --yes
+VLLM_MODEL=google/gemma-4-E4B-it uv run llm-discovery run --platform local --yes
 ```
 
 ## CLI Reference

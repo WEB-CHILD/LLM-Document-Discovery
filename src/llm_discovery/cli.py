@@ -129,20 +129,46 @@ def import_results_cmd(
     run_import(db, input_dir)
 
 
+def _ensure_validated(platform_name: str, project: str | None) -> bool:
+    """Run validation for a platform. Returns True if all checks pass."""
+    from llm_discovery.platform import (
+        display_validation_results,
+        load_platforms,
+        validate_platform,
+    )
+
+    config_path = Path("config/platforms.yaml")
+    if not config_path.exists():
+        rprint("[red]Error: config/platforms.yaml not found[/red]")
+        return False
+    platforms = load_platforms(config_path)
+    if platform_name not in platforms.platforms:
+        rprint(f"[red]Error: unknown platform '{platform_name}'. Available: {', '.join(platforms.platforms)}[/red]")
+        return False
+    platform_config = platforms.platforms[platform_name]
+    results = validate_platform(platform_config, project=project)
+    return display_validation_results(platform_config.display_name, results)
+
+
 @app.command()
 def validate(
-    platform: str = typer.Option(..., help="HPC platform to validate: gadi or ucloud"),
+    platform: str = typer.Option(..., help="HPC platform: gadi or ucloud"),
+    project: str = typer.Option(None, help="NCI project code (for Gadi)"),
 ) -> None:
     """Check remote HPC environment readiness."""
-    rprint("[yellow]validate: not yet implemented[/yellow]")
-    raise typer.Exit(1)
+    if not _ensure_validated(platform, project):
+        raise typer.Exit(1)
 
 
 @app.command()
 def deploy(
     platform: str = typer.Option(..., help="HPC platform to deploy to: gadi or ucloud"),
+    project: str = typer.Option(None, help="NCI project code (for Gadi)"),
 ) -> None:
     """Sync code to HPC and submit job."""
+    if not _ensure_validated(platform, project):
+        rprint("[yellow]Validation failed — fix issues before deploying[/yellow]")
+        raise typer.Exit(1)
     rprint("[yellow]deploy: not yet implemented[/yellow]")
     raise typer.Exit(1)
 

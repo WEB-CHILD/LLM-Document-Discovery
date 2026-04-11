@@ -1,0 +1,39 @@
+#!/bin/bash
+#PBS -q {{GPU_QUEUE}}
+#PBS -P {{NCI_PROJECT}}
+#PBS -l ngpus=4
+#PBS -l ncpus=48
+#PBS -l mem=380GB
+#PBS -l walltime=04:00:00
+#PBS -l jobfs=200GB
+#PBS -l storage=scratch/{{NCI_PROJECT}}
+#PBS -N llm-discovery
+#PBS -o llm-discovery.out
+#PBS -e llm-discovery.err
+
+# Load required modules
+module load cuda/12.0
+module load python3/3.12
+
+# Change to working directory
+cd "${PBS_O_WORKDIR}" || exit 1
+
+# Set GPU-specific vLLM parameters based on queue
+# These are read by scripts/process_corpus.sh -> scripts/start_server.sh
+case "{{GPU_QUEUE}}" in
+    gpuhopper)
+        export VLLM_TP=4
+        export VLLM_GPU_MEM=0.92
+        export VLLM_MAX_SEQS=384
+        ;;
+    gpuvolta)
+        export VLLM_TP=4
+        export VLLM_GPU_MEM=0.90
+        export VLLM_MAX_SEQS=64
+        ;;
+esac
+
+export VLLM_MODEL="${VLLM_MODEL:-mistralai/gpt-oss-120b}"
+
+# Run the pipeline
+bash scripts/process_corpus.sh

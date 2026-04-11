@@ -5,7 +5,7 @@ from pathlib import Path
 import typer
 from rich import print as rprint
 
-from llm_discovery.fetch import fetch_corpus
+from llm_discovery.fetch import DEFAULT_DEMO_URLS, fetch_single
 from llm_discovery.import_results import run_import
 from llm_discovery.preflight_check import run_preflight
 from llm_discovery.prep_db import run_prep_db
@@ -25,22 +25,29 @@ def fetch(
     ),
 ) -> None:
     """Download pages from the Internet Archive and convert to markdown."""
-    url_list = urls if urls else None
-    count = len(urls) if urls else 5
-    rprint(f"[bold]Fetching {count} documents from Internet Archive...[/bold]")
+    url_list = urls if urls else DEFAULT_DEMO_URLS
+    rprint(f"[bold]Fetching {len(url_list)} documents from Internet Archive...[/bold]")
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    try:
-        written = fetch_corpus(url_list, output_dir)
-    except RuntimeError as exc:
-        rprint(f"[red]{exc}[/red]")
-        raise typer.Exit(1) from exc
+    written = 0
+    skipped = 0
+    failed = 0
+    for url in url_list:
+        try:
+            result = fetch_single(url, output_dir)
+            if result is not None:
+                rprint(f"  [green]fetched[/green] {result.name}")
+                written += 1
+            else:
+                rprint(f"  [dim]skipped[/dim] {url} (already exists)")
+                skipped += 1
+        except Exception as exc:
+            rprint(f"  [red]error[/red] {url}: {exc}")
+            failed += 1
 
-    skipped = count - len(written)
-    rprint(
-        f"[green]Done.[/green] Fetched {len(written)}, skipped {skipped}."
-    )
-    if not written and skipped:
-        rprint("[dim]All files already existed — nothing to do.[/dim]")
+    rprint(f"[green]Done.[/green] Fetched {written}, skipped {skipped}, failed {failed}.")
+    if failed:
+        raise typer.Exit(1)
 
 
 @app.command(name="prep-db")

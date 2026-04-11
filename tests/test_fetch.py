@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 from llm_discovery.fetch import (
     DEFAULT_DEMO_URLS,
@@ -126,7 +127,7 @@ class TestDownloadHtml:
     @patch("llm_discovery.fetch.requests.get")
     def test_raises_on_http_error(self, mock_get):
         mock_resp = MagicMock()
-        mock_resp.raise_for_status.side_effect = Exception("404 Not Found")
+        mock_resp.raise_for_status.side_effect = requests.exceptions.HTTPError("404 Not Found")
         mock_get.return_value = mock_resp
 
         with pytest.raises(RuntimeError):

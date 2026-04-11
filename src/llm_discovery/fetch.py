@@ -57,7 +57,7 @@ def download_html(original_url: str, timestamp: str) -> str:
     resp = requests.get(id_url, timeout=30)
     try:
         resp.raise_for_status()
-    except Exception as exc:
+    except requests.exceptions.HTTPError as exc:
         raise RuntimeError(f"Failed to download {id_url}: {exc}") from exc
 
     content_type = resp.headers.get("content-type", "")
@@ -105,7 +105,10 @@ def fetch_single(url: str, output_dir: Path) -> Path | None:
         return None
 
     # Verify snapshot exists
-    verify_snapshot(original_url, timestamp)
+    if not verify_snapshot(original_url, timestamp):
+        raise RuntimeError(
+            f"No snapshot found in CDX for {original_url} at {timestamp}"
+        )
 
     # Download and convert
     html = download_html(original_url, timestamp)

@@ -42,3 +42,4 @@ markers = [
     "network: marks tests requiring network access (deselect with '-m \"not network\"')",
 ]
 testpaths = ["tests"]
+addopts = "-m 'not network and not gpu'"

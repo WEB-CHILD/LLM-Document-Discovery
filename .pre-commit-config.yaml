@@ -1,0 +1,47 @@
+repos:
+  # Ruff: lint with autofix, then format
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.9
+    hooks:
+      # Run the linter with autofix
+      - id: ruff-check
+        args: [--fix]
+      # Run the formatter
+      - id: ruff-format
+
+  # Shell script linting
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+        args: [--severity=warning]
+        files: ^(scripts/.*\.sh|hpc/.*\.sh)$
+
+  # Type checking
+  - repo: local
+    hooks:
+      - id: ty-check
+        name: ty type check
+        entry: uvx ty@0.0.24 check
+        language: system
+        types: [python]
+        pass_filenames: false
+
+  # Cognitive complexity gate — blocks commits with functions > 15
+  - repo: https://github.com/rohaquinlop/complexipy-pre-commit
+    rev: v5.1.0
+    hooks:
+      - id: complexipy
+        args: ['--max-complexity-allowed=15']
+        exclude: '^tests/'
+
+  # General pre-commit hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-merge-conflict

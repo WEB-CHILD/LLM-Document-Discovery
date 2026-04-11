@@ -31,6 +31,7 @@ gpu_types:
     tensor_parallel_size: 4
     gpu_memory_utilization: 0.92
     max_num_seqs: 384
+    max_model_len: null  # gpt-oss-120b: use vLLM default (model's full context); tune down if OOM
     notes: "NCI Gadi gpuhopper queue, 4x141GB."
     model: "openai/gpt-oss-120b"
 
@@ -38,6 +39,7 @@ gpu_types:
     tensor_parallel_size: 2
     gpu_memory_utilization: 0.92
     max_num_seqs: 128
+    max_model_len: null  # gpt-oss-120b: use vLLM default; 2x80GB may need lower value
     notes: "UCloud DeiC, 2x80GB (160GB total)."
     model: "openai/gpt-oss-120b"
 

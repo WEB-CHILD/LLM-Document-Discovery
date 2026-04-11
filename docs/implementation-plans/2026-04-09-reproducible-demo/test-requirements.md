@@ -2,7 +2,7 @@
 
 Maps each acceptance criterion to specific automated tests or human verification steps.
 
-**Corrected counts:** 21 categories / 105 result_category rows (categories 01 and 12 intentionally excluded from the research design). The design plan's "22 categories / 110 rows" is incorrect.
+**Corrected counts:** 21 categories / 105 result_category rows (categories 01 and 12 intentionally excluded from the research design). The design plan was corrected from "22 categories / 110 rows" on 2026-04-11.
 
 **Corrected fetch architecture:** The fetch pipeline uses Wayback Machine `id_` endpoint (`https://web.archive.org/web/{timestamp}id_/{url}`) to retrieve original HTML without Wayback toolbar injection. CDX API is used only for snapshot existence verification, not for WARC range requests.
 

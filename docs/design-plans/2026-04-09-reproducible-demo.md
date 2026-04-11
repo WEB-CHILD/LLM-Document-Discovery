@@ -29,7 +29,7 @@ The orchestration layer is a Typer CLI (`llm-discovery`) that runs locally and m
 - **reproducible-demo.AC2.1 Success:** `llm-discovery fetch` produces 5 markdown files with correct `{timestamp}/{url}` header format
 - **reproducible-demo.AC2.2 Success:** Each fetched file passes `preflight_check` validation
 - **reproducible-demo.AC2.3 Success:** Full pipeline (prep_db -> vLLM -> unified_processor -> import_results) completes on the 5 demo documents
-- **reproducible-demo.AC2.4 Success:** `corpus.db` contains results for all 5 documents x 22 categories = 110 result_category rows
+- **reproducible-demo.AC2.4 Success:** `corpus.db` contains results for all 5 documents x 21 categories = 105 result_category rows
 - **reproducible-demo.AC2.5 Failure:** `llm-discovery fetch` with unreachable IA URL reports clear error, does not leave partial files
 - **reproducible-demo.AC2.6 Edge:** Re-running `llm-discovery fetch` skips already-fetched files (idempotent)
 
@@ -62,7 +62,7 @@ The orchestration layer is a Typer CLI (`llm-discovery`) that runs locally and m
 - **Atomic write (temp file + rename)**: Crash-safe file writing: write to temporary file, then rename (atomic on Unix).
 - **SHA256 change detection**: Using content hashes to detect whether documents or prompts have changed since last processed.
 - **tensor parallelism**: GPU parallelism strategy that splits model weights across multiple GPUs. Required for large models like gpt-oss-120b.
-- **result_category**: A table in the pipeline schema representing the output of running one category prompt against one document. 110 rows = 5 documents x 22 categories.
+- **result_category**: A table in the pipeline schema representing the output of running one category prompt against one document. 105 rows = 5 documents x 21 categories (categories 01 and 12 excluded from research design).
 - **Kidlink / Kidpub**: Historical online communities for children (1990s-2000s) whose archived pages serve as the demo corpus.
 - **FirstRun**: The prior production run of this classification pipeline, from which core processing code is adapted.
 

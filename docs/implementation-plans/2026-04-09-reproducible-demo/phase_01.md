@@ -168,9 +168,9 @@ Expected: 21 files with numbers 02-11, 13-23. Missing: 01 and 12.
 
 **Step 2: Verify 21 categories is correct**
 
-FirstRun also has exactly 21 files (same numbers present: 02-11, 13-23). Categories 01 and 12 were intentionally excluded from the original research design. The design plan's "22 categories" is incorrect — the correct count is 21.
+FirstRun also has exactly 21 files (same numbers present: 02-11, 13-23). Categories 01 and 12 were intentionally excluded from the original research design. The design plan was corrected from "22 categories" to 21 on 2026-04-11.
 
-**NOTE:** The design's AC2.4 says "5 documents x 22 categories = 110 result_category rows." This should be "5 x 21 = 105 result_category rows." Confirm this with the project owner during implementation. All implementation plan phases use 21 categories as the expected count.
+**NOTE:** The design's AC2.4 was corrected from "5 x 22 = 110" to "5 x 21 = 105 result_category rows" on 2026-04-11. All implementation plan phases use 21 categories as the expected count.
 
 **Step 3: Verify each YAML file has required structure**
 

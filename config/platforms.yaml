@@ -1,0 +1,34 @@
+# HPC platform definitions
+# Used by llm-discovery validate/deploy/retrieve commands
+
+platforms:
+  gadi:
+    display_name: "NCI Gadi"
+    ssh_host: "gadi.nci.org.au"
+    remote_base: "/scratch/{project}/llm-discovery"
+    gpu_queue: "gpuvolta"
+    gpu_type: "V100"
+    submission: "pbs"
+    modules:
+      - "cuda/12.0"
+      - "python3/3.12"
+    checks:
+      - name: "SSH connectivity"
+        command: "hostname"
+      - name: "/scratch accessible"
+        command: "test -d /scratch/{project}"
+      - name: "HF_TOKEN set"
+        command: "test -n \"$HF_TOKEN\""
+      - name: "uv available"
+        command: "which uv"
+
+  ucloud:
+    display_name: "DeiC UCloud"
+    ssh_host: null
+    remote_base: "/work/llm-discovery"
+    gpu_type: "H100"
+    submission: "api"
+    modules: []
+    checks:
+      - name: "API endpoint reachable"
+        command: null

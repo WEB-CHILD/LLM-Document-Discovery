@@ -80,7 +80,7 @@ datasette corpus.db
 
 **Hardware:** 4x H200 (141GB VRAM each, 564GB total)
 **Queue:** gpuhopper
-**Model:** `mistralai/gpt-oss-120b`
+**Model:** `openai/gpt-oss-120b`
 **vLLM params:** tp=4, gpu_mem=0.92, max_seqs=384
 
 ### Prerequisites
@@ -106,7 +106,7 @@ Same as Tier 1 checklist, plus:
 ```bash
 # 8. Run stats recorded
 sqlite3 corpus.db "SELECT * FROM run_stats"
-# expect: 1 row with model=mistralai/gpt-oss-120b, pairs_processed=105
+# expect: 1 row with model=openai/gpt-oss-120b, pairs_processed=105
 
 # 9. Compare quality against Tier 1
 sqlite3 corpus.db "SELECT match, COUNT(*) FROM result_category GROUP BY match"
@@ -137,7 +137,7 @@ V100 nodes (4x32GB = 128GB total). `gpt-oss-120b` at FP16 needs ~240GB — won't
 **Goal:** Demonstrate cross-platform HPC portability.
 
 **Hardware:** 4x H100 (80GB VRAM each, 320GB total)
-**Model:** `mistralai/gpt-oss-120b`
+**Model:** `openai/gpt-oss-120b`
 **vLLM params:** tp=4, gpu_mem=0.92, max_seqs=384
 
 ### Run

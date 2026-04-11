@@ -18,21 +18,21 @@ gpu_types:
     gpu_memory_utilization: 0.90
     max_num_seqs: 64
     notes: "NCI Gadi gpuvolta queue, 4x32GB"
-    model: "mistralai/gpt-oss-120b"
+    model: "openai/gpt-oss-120b"
 
   H200:
     tensor_parallel_size: 4
     gpu_memory_utilization: 0.92
     max_num_seqs: 384
     notes: "NCI Gadi gpuhopper queue, 4x141GB"
-    model: "mistralai/gpt-oss-120b"
+    model: "openai/gpt-oss-120b"
 
   H100:
     tensor_parallel_size: 4
     gpu_memory_utilization: 0.92
     max_num_seqs: 384
     notes: "UCloud DeiC, 4x80GB"
-    model: "mistralai/gpt-oss-120b"
+    model: "openai/gpt-oss-120b"
 
 # Default model for HPC (overridden per gpu_type above)
-default_model: "mistralai/gpt-oss-120b"
+default_model: "openai/gpt-oss-120b"

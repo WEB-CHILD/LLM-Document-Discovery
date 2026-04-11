@@ -33,7 +33,7 @@ case "{{GPU_QUEUE}}" in
         ;;
 esac
 
-export VLLM_MODEL="${VLLM_MODEL:-mistralai/gpt-oss-120b}"
+export VLLM_MODEL="${VLLM_MODEL:-openai/gpt-oss-120b}"
 
 # Run the pipeline
 bash scripts/process_corpus.sh

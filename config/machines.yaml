@@ -3,35 +3,42 @@
 # memory utilisation, and concurrency limits.
 #
 # Gadi queue mapping: gpuhopper = H200, gpuvolta = V100
+#
+# Gemma 4 context limits (from vLLM recipe):
+#   E4B: up to 131072 tokens
+#   31B: up to 262144 tokens (256K)
+#
+# Production model: openai/gpt-oss-120b (MoE, 117B total / 5.1B active)
 
 gpu_types:
   RTX4090:
     tensor_parallel_size: 1
     gpu_memory_utilization: 0.85
     max_num_seqs: 16
-    max_model_len: 16384
-    notes: "Single consumer GPU, 24GB VRAM. Use with Gemma 4 E4B."
+    max_model_len: 131072
+    notes: "Single consumer GPU, 24GB VRAM"
     model: "google/gemma-4-E4B-it"
 
   V100:
     tensor_parallel_size: 4
     gpu_memory_utilization: 0.90
     max_num_seqs: 64
-    notes: "NCI Gadi gpuvolta queue, 4x32GB"
-    model: "openai/gpt-oss-120b"
+    max_model_len: 262144
+    notes: "NCI Gadi gpuvolta queue, 4x32GB (128GB total). 31B dense fits at TP4."
+    model: "google/gemma-4-31B-it"
 
   H200:
     tensor_parallel_size: 4
     gpu_memory_utilization: 0.92
     max_num_seqs: 384
-    notes: "NCI Gadi gpuhopper queue, 4x141GB"
+    notes: "NCI Gadi gpuhopper queue, 4x141GB."
     model: "openai/gpt-oss-120b"
 
   H100:
-    tensor_parallel_size: 4
+    tensor_parallel_size: 2
     gpu_memory_utilization: 0.92
-    max_num_seqs: 384
-    notes: "UCloud DeiC, 4x80GB"
+    max_num_seqs: 128
+    notes: "UCloud DeiC, 2x80GB (160GB total)."
     model: "openai/gpt-oss-120b"
 
 # Default model for HPC (overridden per gpu_type above)

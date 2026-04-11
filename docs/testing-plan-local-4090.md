@@ -1,182 +1,140 @@
-# Testing Plan: Local RTX 4090 → Gadi → UCloud
+# Testing Plan: Local → Gadi → UCloud
 
-Escalation path from local development GPU through to production HPC.
+Escalation path with model choice at each tier. The `--model` flag overrides
+the per-GPU-type default at any tier.
 
-## Tier 1: Local RTX 4090 + Gemma 4 E4B
+## Available Models
 
-**Goal:** Demonstrate the pipeline runs end-to-end on a single consumer GPU.
+| Model | ID | Architecture | Fits on |
+|-------|----|-------------|---------|
+| Gemma 4 E4B | `google/gemma-4-E4B-it` | eff. 4B dense | 1x 24GB+ |
+| Gemma 4 31B | `google/gemma-4-31B-it` | 31B dense | 2x 80GB (TP2) or 4x 32GB (TP4) |
+| GPT-OSS-120B | `openai/gpt-oss-120b` | 117B MoE / 5.1B active | 1x 80GB |
 
-**Hardware:** RTX 4090 (24GB VRAM)
-**Model:** `google/gemma-4-E4B-it` (effective 4B params, BF16, fits in 24GB)
-**vLLM:** nightly (`--pre` from `wheels.vllm.ai/nightly/cu129`)
+Sources: [vLLM Gemma 4 Recipe](https://docs.vllm.ai/projects/recipes/en/latest/Google/Gemma4.html), [gpt-oss-120b](https://huggingface.co/openai/gpt-oss-120b)
+
+---
+
+## Tier 1: Local RTX 4090
+
+**Hardware:** 1x RTX 4090 (24GB)
+**Default model:** `google/gemma-4-E4B-it`
+**Config:** tp=1, mem=0.85, max_model_len=131072
 
 ### Prerequisites
 
 ```bash
-# Install vLLM nightly (cannot be in uv.lock — PEP 440 incompatible)
 uv pip install -U vllm --pre \
   --extra-index-url https://wheels.vllm.ai/nightly/cu129 \
   --extra-index-url https://download.pytorch.org/whl/cu129 \
   --index-strategy unsafe-best-match
 uv pip install transformers==5.5.0
-
-# If HF cache fills root disk, symlink to external storage:
-# ln -s /media/brian/storage/.cache/huggingface ~/.cache/huggingface
 ```
 
 ### Run
 
 ```bash
-uv run llm-discovery run \
-  --platform local \
-  --gpu-type RTX4090 \
-  --model google/gemma-4-E4B-it \
-  --yes
+# Default (Gemma 4 E4B)
+uv run llm-discovery run --platform local --gpu-type RTX4090 --yes
+
+# Or override model
+uv run llm-discovery run --platform local --gpu-type RTX4090 \
+  --model google/gemma-4-E2B-it --yes
 ```
-
-This fetches 5 demo pages, starts vLLM with `--gpu-memory-utilization 0.85 --max-num-seqs 16`, runs prep-db → preflight → process → import-results, and kills the server on exit.
-
-### Verification checklist
-
-```bash
-# 1. Pipeline completed without error
-echo $?  # expect 0
-
-# 2. Database has results for all 5 docs x 21 categories
-sqlite3 corpus.db "SELECT COUNT(*) FROM result_category"
-# expect: 105 (or more if documents were split)
-
-# 3. All categories covered
-sqlite3 corpus.db "SELECT COUNT(DISTINCT category_id) FROM result_category"
-# expect: 21
-
-# 4. All documents covered
-sqlite3 corpus.db "SELECT COUNT(DISTINCT result_id) FROM result_category"
-# expect: 5 (or more if split)
-
-# 5. Match values are valid
-sqlite3 corpus.db "SELECT DISTINCT match FROM result_category"
-# expect: yes, maybe, no (some subset)
-
-# 6. Blockquotes extracted
-sqlite3 corpus.db "SELECT COUNT(*) FROM result_category_blockquote"
-# expect: > 0
-
-# 7. Browse results
-datasette corpus.db
-```
-
-### Known caveats (from melica spike)
-
-- **Structured output not enforced:** vLLM nightly doesn't enforce `response_format: json_schema` for Gemma 4. Responses may wrap JSON in markdown fences. The `extract_json_from_text()` parser in `unified_processor.py` handles this — it finds balanced braces regardless of surrounding text.
-- **Performance:** ~1-2s per request on RTX 4090, so 105 pairs ≈ 2-4 minutes.
-- **Quality:** Gemma 4 E4B is a small model. Classification quality will be lower than gpt-oss-120b. This tier validates the pipeline mechanics, not output quality.
 
 ---
 
-## Tier 2: NCI Gadi (gpuhopper — H200)
+## Tier 2: Gadi gpuvolta (V100)
 
-**Goal:** Run the full pipeline at production scale on HPC with the production model.
-
-**Hardware:** 4x H200 (141GB VRAM each, 564GB total)
-**Queue:** gpuhopper
-**Model:** `openai/gpt-oss-120b`
-**vLLM params:** tp=4, gpu_mem=0.92, max_seqs=384
-
-### Prerequisites
-
-See [docs/gadi-setup.md](gadi-setup.md) for SSH, project allocation, HF_TOKEN, uv installation.
+**Hardware:** 4x V100-32GB (128GB total)
+**Default model:** `google/gemma-4-31B-it`
+**Config:** tp=4, mem=0.90, max_model_len=262144
 
 ### Run
 
 ```bash
-uv run llm-discovery run \
-  --platform gadi \
-  --project <NCI_PROJECT> \
-  --gpu-queue gpuhopper \
-  --yes
+# Default (Gemma 4 31B)
+uv run llm-discovery run --platform gadi --project <CODE> \
+  --gpu-queue gpuvolta --yes
+
+# Override to E4B for quick validation
+uv run llm-discovery run --platform gadi --project <CODE> \
+  --gpu-queue gpuvolta --model google/gemma-4-E4B-it --yes
 ```
-
-This validates SSH → rsyncs code → submits PBS job → polls qstat → retrieves corpus.db.
-
-### Verification checklist
-
-Same as Tier 1 checklist, plus:
-
-```bash
-# 8. Run stats recorded
-sqlite3 corpus.db "SELECT * FROM run_stats"
-# expect: 1 row with model=openai/gpt-oss-120b, pairs_processed=105
-
-# 9. Compare quality against Tier 1
-sqlite3 corpus.db "SELECT match, COUNT(*) FROM result_category GROUP BY match"
-# expect: distribution should be more nuanced than Gemma 4 E4B
-```
-
-### Fallback: gpuvolta (V100)
-
-If gpuhopper allocation unavailable:
-
-```bash
-uv run llm-discovery run \
-  --platform gadi \
-  --project <NCI_PROJECT> \
-  --gpu-queue gpuvolta \
-  --yes
-```
-
-V100 nodes (4x32GB = 128GB total). `gpt-oss-120b` at FP16 needs ~240GB — won't fit. Options:
-- Use a quantised model variant
-- Use Gemma 4 E4B (same as local, validates HPC pipeline without production model)
-- Wait for gpuhopper allocation
 
 ---
 
-## Tier 3: DeiC UCloud (H100)
+## Tier 3: Gadi gpuhopper (H200)
 
-**Goal:** Demonstrate cross-platform HPC portability.
-
-**Hardware:** 4x H100 (80GB VRAM each, 320GB total)
-**Model:** `openai/gpt-oss-120b`
-**vLLM params:** tp=4, gpu_mem=0.92, max_seqs=384
+**Hardware:** 4x H200-141GB (564GB total)
+**Default model:** `openai/gpt-oss-120b`
+**Config:** tp=4, mem=0.92, max_seqs=384
 
 ### Run
 
-UCloud requires manual submission (no SSH-based automation):
+```bash
+# Production model
+uv run llm-discovery run --platform gadi --project <CODE> \
+  --gpu-queue gpuhopper --yes
+
+# Gemma 4 31B for comparison
+uv run llm-discovery run --platform gadi --project <CODE> \
+  --gpu-queue gpuhopper --model google/gemma-4-31B-it --yes
+```
+
+### Production comparison
+
+Run both models on the same 5 documents, then compare:
 
 ```bash
-# Sync code manually (git clone or UCloud Drive upload)
-# Then inside UCloud Terminal:
+# Run 1: gpt-oss-120b
+uv run llm-discovery run --platform gadi --project <CODE> \
+  --gpu-queue gpuhopper --yes
+cp corpus.db corpus-gptoss.db
+
+# Run 2: gemma-4-31B
+rm corpus.db  # fresh DB
+uv run llm-discovery run --platform gadi --project <CODE> \
+  --gpu-queue gpuhopper --model google/gemma-4-31B-it --yes
+cp corpus.db corpus-gemma31b.db
+
+# Compare
+sqlite3 corpus-gptoss.db "SELECT match, COUNT(*) FROM result_category GROUP BY match"
+sqlite3 corpus-gemma31b.db "SELECT match, COUNT(*) FROM result_category GROUP BY match"
+
+# Detailed comparison via datasette
+datasette corpus-gptoss.db corpus-gemma31b.db
+```
+
+---
+
+## Tier 4: UCloud (H100)
+
+**Hardware:** 2x H100-80GB (160GB total)
+**Default model:** `openai/gpt-oss-120b`
+**Config:** tp=2, mem=0.92, max_seqs=128
+
+### Run
+
+```bash
+# Inside UCloud Terminal:
 cd /work/llm-discovery
 bash hpc/ucloud_batch.sh
-```
 
-Or via the CLI (prints manual instructions):
-
-```bash
-uv run llm-discovery deploy --platform ucloud
-```
-
-### Verification checklist
-
-Same as Tier 2 checklist. Additionally:
-
-```bash
-# 10. Retrieve results from UCloud
-# (manual: download corpus.db via UCloud Drive or scp)
-
-# 11. Compare results across all 3 tiers
-# Same 5 documents, same 21 categories — results should be
-# structurally identical (same schema) with different quality/match
-# distributions reflecting model capability.
+# Or override model:
+VLLM_MODEL=google/gemma-4-31B-it bash hpc/ucloud_batch.sh
 ```
 
 ---
 
-## Summary
+## Verification Checklist (all tiers)
 
-| Tier | GPU | Model | Purpose | Pairs | Est. time |
-|------|-----|-------|---------|-------|-----------|
-| 1 | RTX 4090 (1x24GB) | Gemma 4 E4B | Pipeline validation | 105 | ~3 min |
-| 2 | H200 (4x141GB) | gpt-oss-120b | Production quality | 105 | ~1 min |
-| 3 | H100 (4x80GB) | gpt-oss-120b | Cross-platform check | 105 | ~1 min |
+```bash
+sqlite3 corpus.db "SELECT COUNT(*) FROM result_category"                  # expect: 105
+sqlite3 corpus.db "SELECT COUNT(DISTINCT category_id) FROM result_category" # expect: 21
+sqlite3 corpus.db "SELECT COUNT(DISTINCT result_id) FROM result_category"   # expect: 5+
+sqlite3 corpus.db "SELECT DISTINCT match FROM result_category"              # expect: yes/maybe/no
+sqlite3 corpus.db "SELECT COUNT(*) FROM result_category_blockquote"         # expect: > 0
+sqlite3 corpus.db "SELECT model, pairs_processed FROM run_stats"            # verify model name
+datasette corpus.db                                                         # browse results
+```

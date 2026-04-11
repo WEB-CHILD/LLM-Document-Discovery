@@ -27,12 +27,20 @@ def start_vllm_server(model: str, gpu_params: dict, port: int = 8000) -> None:
     tp = gpu_params.get("tensor_parallel_size", 4)
     gpu_mem = gpu_params.get("gpu_memory_utilization", 0.92)
     max_seqs = gpu_params.get("max_num_seqs", 384)
+    max_model_len = gpu_params.get("max_model_len", "")
 
-    cmd = (
-        f"VLLM_MODEL='{model}' VLLM_TP={tp} VLLM_GPU_MEM={gpu_mem} "
-        f"VLLM_MAX_SEQS={max_seqs} VLLM_PORT={port} "
-        f"bash scripts/start_server.sh"
-    )
+    env_parts = [
+        f"VLLM_MODEL='{model}'",
+        f"VLLM_TP={tp}",
+        f"VLLM_GPU_MEM={gpu_mem}",
+        f"VLLM_MAX_SEQS={max_seqs}",
+        f"VLLM_PORT={port}",
+        "VLLM_TEXT_ONLY=1",
+    ]
+    if max_model_len:
+        env_parts.append(f"VLLM_MAX_MODEL_LEN={max_model_len}")
+
+    cmd = " ".join(env_parts) + " bash scripts/start_server.sh"
     subprocess.run(
         ["tmux", "new-session", "-d", "-s", TMUX_SESSION, cmd],
         check=True,

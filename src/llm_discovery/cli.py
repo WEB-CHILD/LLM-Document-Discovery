@@ -292,7 +292,6 @@ def _run_local_pipeline(
     if config_path.exists():
         with config_path.open() as f:
             machines = yaml.safe_load(f)
-        default_model = model or machines.get("default_model", "openai/gpt-oss-20b")
         gpu_type_key = gpu_type or "H100"
         gpu_types = machines.get("gpu_types", {})
         if gpu_type_key not in gpu_types:
@@ -302,6 +301,12 @@ def _run_local_pipeline(
             )
             raise typer.Exit(1)
         gpu_params = gpu_types[gpu_type_key]
+        # Model priority: --model flag > gpu_type config > default_model
+        default_model = (
+            model
+            or gpu_params.get("model")
+            or machines.get("default_model", "openai/gpt-oss-20b")
+        )
     else:
         default_model = model or "openai/gpt-oss-20b"
         gpu_params = {

@@ -1,37 +1,38 @@
 # vLLM parameters per GPU type
 # Used by scripts/start_server.sh to configure tensor parallelism,
 # memory utilisation, and concurrency limits.
+#
+# Gadi queue mapping: gpuhopper = H200, gpuvolta = V100
 
 gpu_types:
   RTX4090:
     tensor_parallel_size: 1
     gpu_memory_utilization: 0.85
     max_num_seqs: 16
-    notes: "Single consumer GPU, 24GB VRAM. Use with smaller models (Gemma 4)."
+    max_model_len: 16384
+    notes: "Single consumer GPU, 24GB VRAM. Use with Gemma 4 E4B."
+    model: "google/gemma-4-E4B-it"
 
   V100:
     tensor_parallel_size: 4
     gpu_memory_utilization: 0.90
     max_num_seqs: 64
-    notes: "NCI Gadi gpuvolta queue"
-
-  A100:
-    tensor_parallel_size: 4
-    gpu_memory_utilization: 0.92
-    max_num_seqs: 128
-    notes: "NCI Gadi dgxa100 queue"
-
-  H100:
-    tensor_parallel_size: 4
-    gpu_memory_utilization: 0.92
-    max_num_seqs: 384
-    notes: "UCloud or similar"
+    notes: "NCI Gadi gpuvolta queue, 4x32GB"
+    model: "mistralai/gpt-oss-120b"
 
   H200:
     tensor_parallel_size: 4
     gpu_memory_utilization: 0.92
     max_num_seqs: 384
-    notes: "NCI Gadi H200 queue"
+    notes: "NCI Gadi gpuhopper queue, 4x141GB"
+    model: "mistralai/gpt-oss-120b"
 
-# Default model
+  H100:
+    tensor_parallel_size: 4
+    gpu_memory_utilization: 0.92
+    max_num_seqs: 384
+    notes: "UCloud DeiC, 4x80GB"
+    model: "mistralai/gpt-oss-120b"
+
+# Default model for HPC (overridden per gpu_type above)
 default_model: "mistralai/gpt-oss-120b"

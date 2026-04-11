@@ -31,7 +31,7 @@ CREATE TABLE category (
 CREATE TABLE result_category (
   result_id INTEGER NOT NULL,
   category_id INTEGER NOT NULL,
-  match TEXT NOT NULL CHECK(match IN ('yes', 'maybe', 'no')),
+  match TEXT NOT NULL CHECK(match IN ('yes', 'maybe', 'no', '1', '0')),
   reasoning_trace TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (result_id, category_id),
@@ -110,9 +110,9 @@ SELECT
   r.content_sha256,
   r.created_at,
   COUNT(DISTINCT rc.category_id) as categories_processed,
-  SUM(CASE WHEN rc.match = 'yes' THEN 1 ELSE 0 END) as yes_count,
+  SUM(CASE WHEN rc.match IN ('yes', '1') THEN 1 ELSE 0 END) as yes_count,
   SUM(CASE WHEN rc.match = 'maybe' THEN 1 ELSE 0 END) as maybe_count,
-  SUM(CASE WHEN rc.match = 'no' THEN 1 ELSE 0 END) as no_count,
+  SUM(CASE WHEN rc.match IN ('no', '0') THEN 1 ELSE 0 END) as no_count,
   (SELECT COUNT(*) FROM result_category_blockquote rcb WHERE rcb.result_id = r.result_id) as total_blockquotes
 FROM result r
 LEFT JOIN result_category rc ON r.result_id = rc.result_id
@@ -161,12 +161,12 @@ SELECT
   c.category_description,
   -- Aggregate match: yes if any part yes, maybe if any part maybe, else no
   CASE
-    WHEN SUM(CASE WHEN rc.match = 'yes' THEN 1 ELSE 0 END) > 0 THEN 'yes'
+    WHEN SUM(CASE WHEN rc.match IN ('yes', '1') THEN 1 ELSE 0 END) > 0 THEN 'yes'
     WHEN SUM(CASE WHEN rc.match = 'maybe' THEN 1 ELSE 0 END) > 0 THEN 'maybe'
     ELSE 'no'
   END as aggregate_match,
   COUNT(DISTINCT r.result_id) as parts_processed,
-  SUM(CASE WHEN rc.match = 'yes' THEN 1 ELSE 0 END) as yes_parts,
+  SUM(CASE WHEN rc.match IN ('yes', '1') THEN 1 ELSE 0 END) as yes_parts,
   SUM(CASE WHEN rc.match = 'maybe' THEN 1 ELSE 0 END) as maybe_parts,
   GROUP_CONCAT(DISTINCT r.part_number) as matching_parts
 FROM result r

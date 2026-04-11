@@ -260,6 +260,7 @@ def run(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip interactive prompts (unattended mode)"),
     urls: list[str] = typer.Argument(None, help="Internet Archive URLs (defaults to demo)"),
     model: str = typer.Option(None, help="Override model name (e.g., google/gemma-4-12b for local testing)"),
+    gpu_type: str = typer.Option(None, help="GPU type from machines.yaml (e.g., RTX4090, V100, H100)"),
 ) -> None:
     """Execute the complete pipeline: fetch -> validate -> deploy -> status -> retrieve."""
     from llm_discovery.fetch import DEFAULT_DEMO_URLS, fetch_single
@@ -303,12 +304,13 @@ def run(
             with open(config_path) as f:
                 machines = yaml.safe_load(f)
             default_model = model or machines.get("default_model", "openai/gpt-oss-20b")
-            # Use H100 params as default for local (most common dev GPU)
-            gpu_params = machines.get("gpu_types", {}).get("H100", {
-                "tensor_parallel_size": 4,
-                "gpu_memory_utilization": 0.92,
-                "max_num_seqs": 384,
-            })
+            gpu_type_key = gpu_type or "H100"
+            gpu_types = machines.get("gpu_types", {})
+            if gpu_type_key not in gpu_types:
+                available = ", ".join(gpu_types.keys())
+                rprint(f"[red]Unknown GPU type '{gpu_type_key}'. Available: {available}[/red]")
+                raise typer.Exit(1)
+            gpu_params = gpu_types[gpu_type_key]
         else:
             default_model = model or "openai/gpt-oss-20b"
             gpu_params = {"tensor_parallel_size": 1, "gpu_memory_utilization": 0.90, "max_num_seqs": 64}

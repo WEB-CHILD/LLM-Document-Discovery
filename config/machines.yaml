@@ -3,6 +3,12 @@
 # memory utilisation, and concurrency limits.
 
 gpu_types:
+  RTX4090:
+    tensor_parallel_size: 1
+    gpu_memory_utilization: 0.85
+    max_num_seqs: 16
+    notes: "Single consumer GPU, 24GB VRAM. Use with smaller models (Gemma 4)."
+
   V100:
     tensor_parallel_size: 4
     gpu_memory_utilization: 0.90

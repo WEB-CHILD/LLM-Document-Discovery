@@ -4,7 +4,7 @@ Reproducible pipeline for classifying historical web documents (1996-2005) using
 
 ## Prerequisites
 
-- Python 3.12+
+- Python 3.12 or 3.13 (vLLM does not yet support 3.14)
 - [uv](https://docs.astral.sh/uv/) package manager
 - HuggingFace account (free, for model access)
 - GPU access (local or HPC) -- Gemma 4 works for local testing on modest GPUs

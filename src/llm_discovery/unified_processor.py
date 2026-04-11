@@ -578,6 +578,8 @@ def run_processor(
                         progress.update(task, completed=completed_count, rate=rate)
                     except Exception as e:
                         console.print(f"[red][ERROR] Worker exception: {e}[/red]")
+                        with stats_lock:
+                            stats["failed"] += 1
                         completed_count += 1
                         progress.update(task, completed=completed_count)
 

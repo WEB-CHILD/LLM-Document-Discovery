@@ -29,11 +29,12 @@ def check_document(content: str) -> tuple[bool, str]:
         return False, "empty content"
 
     body = get_content_body(content)
-    if not body:
-        return False, "no body after header"
-
-    if len(body) < MIN_CONTENT_LENGTH:
-        return False, f"body too short ({len(body)} chars, need {MIN_CONTENT_LENGTH})"
+    if not body or len(body) < MIN_CONTENT_LENGTH:
+        if not body:
+            reason = "no body after header"
+        else:
+            reason = f"body too short ({len(body)} chars, need {MIN_CONTENT_LENGTH})"
+        return False, reason
 
     body_bytes = body[:20].encode("utf-8", errors="ignore")
     for magic, file_type in BINARY_MAGIC.items():
@@ -46,7 +47,10 @@ def check_document(content: str) -> tuple[bool, str]:
     printable = sum(1 for c in body if c.isprintable() or c in "\n\r\t")
     ratio = printable / len(body)
     if ratio < MIN_PRINTABLE_RATIO:
-        return False, f"low printable ratio ({ratio:.1%}, need {MIN_PRINTABLE_RATIO:.0%})"
+        return (
+            False,
+            f"low printable ratio ({ratio:.1%}, need {MIN_PRINTABLE_RATIO:.0%})",
+        )
 
     return True, ""
 
@@ -86,28 +90,35 @@ def run_preflight(db_path: Path, delete: bool = False) -> dict:
             placeholders = ",".join("?" * len(result_ids))
 
             cursor.execute(
-                f"SELECT filepath, content_sha256 FROM result WHERE result_id IN ({placeholders})",
+                f"SELECT filepath, content_sha256"  # noqa: S608 -- placeholders built from len()
+                f" FROM result"
+                f" WHERE result_id IN ({placeholders})",
                 result_ids,
             )
             hash_map = {row[0]: row[1] for row in cursor.fetchall()}
 
-            for result_id, filepath, reason in problematic:
+            for _result_id, filepath, reason in problematic:
                 content_hash = hash_map.get(filepath)
                 cursor.execute(
-                    "INSERT OR REPLACE INTO excluded_file (filepath, reason, content_sha256) VALUES (?, ?, ?)",
+                    "INSERT OR REPLACE INTO excluded_file"
+                    " (filepath, reason, content_sha256)"
+                    " VALUES (?, ?, ?)",
                     (filepath, reason, content_hash),
                 )
 
             cursor.execute(
-                f"DELETE FROM result_category_blockquote WHERE result_id IN ({placeholders})",
+                f"DELETE FROM result_category_blockquote"  # noqa: S608
+                f" WHERE result_id IN ({placeholders})",
                 result_ids,
             )
             cursor.execute(
-                f"DELETE FROM result_category WHERE result_id IN ({placeholders})",
+                f"DELETE FROM result_category"  # noqa: S608
+                f" WHERE result_id IN ({placeholders})",
                 result_ids,
             )
             cursor.execute(
-                f"DELETE FROM result WHERE result_id IN ({placeholders})",
+                f"DELETE FROM result"  # noqa: S608
+                f" WHERE result_id IN ({placeholders})",
                 result_ids,
             )
 

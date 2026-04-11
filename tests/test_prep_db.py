@@ -21,7 +21,9 @@ class TestCreateDb:
 
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        )
         tables = [row[0] for row in cursor.fetchall()]
         conn.close()
 
@@ -64,14 +66,14 @@ class TestSyncCategories:
         empty_dir.mkdir()
         try:
             sync_categories(tmp_db, empty_dir)
-            assert False, "Should have raised ValueError"
+            raise AssertionError("Should have raised ValueError")
         except ValueError:
             pass
 
 
 class TestSyncDocuments:
     def test_populates_result_table(self, tmp_db, sample_corpus_dir):
-        total, skipped, split_count = sync_documents(tmp_db, sample_corpus_dir)
+        total, skipped, _split_count = sync_documents(tmp_db, sample_corpus_dir)
         assert total == 3
         assert skipped == 0
 

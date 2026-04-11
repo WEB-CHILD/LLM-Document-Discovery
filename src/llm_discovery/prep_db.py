@@ -67,15 +67,13 @@ def create_db(db_path: Path, schema_path: Path) -> bool:
         return False
     with sqlite3.connect(db_path, timeout=60.0) as conn:
         cursor = conn.cursor()
-        with open(schema_path) as f:
+        with schema_path.open() as f:
             cursor.executescript(f.read())
         conn.commit()
     return True
 
 
-def sync_categories(
-    db_path: Path, prompts_dir: Path, quiet: bool = False
-) -> int:
+def sync_categories(db_path: Path, prompts_dir: Path, quiet: bool = False) -> int:
     """Sync category table with prompts/*.yaml directory.
 
     Returns the number of categories now in the table.
@@ -91,14 +89,16 @@ def sync_categories(
 
         for cat_file in category_files:
             prompt_hash = sha256_file(cat_file)
-            with open(cat_file) as f:
+            with cat_file.open() as f:
                 data = yaml.safe_load(f)
 
             category_name = data.get("name", "")
             category_description = data.get("description", "")
 
             cursor.execute(
-                "SELECT category_id FROM category WHERE category_filename = ? AND prompt_sha256 = ?",
+                "SELECT category_id FROM category"
+                " WHERE category_filename = ?"
+                " AND prompt_sha256 = ?",
                 (cat_file.name, prompt_hash),
             )
             row = cursor.fetchone()
@@ -142,28 +142,34 @@ def sync_documents(
             content_hash = sha256_file(md_file)
 
             cursor.execute(
-                "SELECT result_id FROM result WHERE filepath = ? AND content_sha256 = ?",
+                "SELECT result_id FROM result"
+                " WHERE filepath = ?"
+                " AND content_sha256 = ?",
                 (str(md_file), content_hash),
             )
             if cursor.fetchone():
                 total_synced += 1
                 continue
 
-            with open(md_file) as f:
+            with md_file.open() as f:
                 content = f.read()
 
             is_valid, reason = is_valid_text_content(content)
             if not is_valid:
                 if not quiet:
-                    console.print(f"[yellow]  Skipping {md_file.name}: {reason}[/yellow]")
+                    console.print(
+                        f"[yellow]  Skipping {md_file.name}: {reason}[/yellow]"
+                    )
                 skipped_count += 1
                 continue
 
             if len(content) > MAX_CONTENT_LENGTH:
                 url_header = content.split("\n\n", 1)[0] if "\n\n" in content else ""
                 cursor.execute(
-                    """INSERT INTO result (filepath, content, content_sha256, part_number, parent_result_id)
-                       VALUES (?, ?, ?, NULL, NULL)""",
+                    "INSERT INTO result"
+                    " (filepath, content, content_sha256,"
+                    " part_number, parent_result_id)"
+                    " VALUES (?, ?, ?, NULL, NULL)",
                     (str(md_file), content, content_hash),
                 )
                 parent_id = cursor.lastrowid
@@ -171,16 +177,26 @@ def sync_documents(
                 for part_num, part_content in enumerate(parts, start=1):
                     part_hash = sha256_string(part_content)
                     cursor.execute(
-                        """INSERT INTO result (filepath, content, content_sha256, part_number, parent_result_id)
-                           VALUES (?, ?, ?, ?, ?)""",
-                        (f"{md_file}_{part_num}", part_content, part_hash, part_num, parent_id),
+                        "INSERT INTO result"
+                        " (filepath, content, content_sha256,"
+                        " part_number, parent_result_id)"
+                        " VALUES (?, ?, ?, ?, ?)",
+                        (
+                            f"{md_file}_{part_num}",
+                            part_content,
+                            part_hash,
+                            part_num,
+                            parent_id,
+                        ),
                     )
                 split_count += 1
                 total_synced += 1
             else:
                 cursor.execute(
-                    """INSERT INTO result (filepath, content, content_sha256, part_number, parent_result_id)
-                       VALUES (?, ?, ?, NULL, NULL)""",
+                    "INSERT INTO result"
+                    " (filepath, content, content_sha256,"
+                    " part_number, parent_result_id)"
+                    " VALUES (?, ?, ?, NULL, NULL)",
                     (str(md_file), content, content_hash),
                 )
                 total_synced += 1
@@ -202,22 +218,27 @@ def get_database_status(db_path: Path) -> dict[str, Any]:
         stats["original_documents"] = cursor.fetchone()[0]
 
         cursor.execute(
-            "SELECT COUNT(DISTINCT parent_result_id) FROM result WHERE parent_result_id IS NOT NULL"
+            "SELECT COUNT(DISTINCT parent_result_id)"
+            " FROM result"
+            " WHERE parent_result_id IS NOT NULL"
         )
         stats["split_documents"] = cursor.fetchone()[0]
 
         cursor.execute("SELECT COUNT(*) FROM result WHERE part_number IS NOT NULL")
         stats["split_parts"] = cursor.fetchone()[0]
 
-        cursor.execute(f"""
-            SELECT COUNT(*) FROM result r
-            WHERE (r.part_number IS NOT NULL)
-               OR (r.parent_result_id IS NULL AND r.part_number IS NULL
-                   AND LENGTH(r.content) <= {MAX_CONTENT_LENGTH}
-                   AND NOT EXISTS (
-                       SELECT 1 FROM result child WHERE child.parent_result_id = r.result_id
-                   ))
-        """)
+        eligible_query = (
+            f"SELECT COUNT(*) FROM result r"  # noqa: S608 -- MAX_CONTENT_LENGTH is a module constant
+            f" WHERE (r.part_number IS NOT NULL)"
+            f"    OR (r.parent_result_id IS NULL"
+            f"        AND r.part_number IS NULL"
+            f"        AND LENGTH(r.content) <= {MAX_CONTENT_LENGTH}"
+            f"        AND NOT EXISTS ("
+            f"          SELECT 1 FROM result child"
+            f"          WHERE child.parent_result_id = r.result_id"
+            f"        ))"
+        )
+        cursor.execute(eligible_query)
         stats["eligible_documents"] = cursor.fetchone()[0]
 
         cursor.execute("SELECT COUNT(*) FROM category")
@@ -226,8 +247,12 @@ def get_database_status(db_path: Path) -> dict[str, Any]:
         cursor.execute("SELECT COUNT(*) FROM result_category")
         stats["processed_pairs"] = cursor.fetchone()[0]
 
-        stats["total_possible_pairs"] = stats["eligible_documents"] * stats["total_categories"]
-        stats["pending_pairs"] = stats["total_possible_pairs"] - stats["processed_pairs"]
+        stats["total_possible_pairs"] = (
+            stats["eligible_documents"] * stats["total_categories"]
+        )
+        stats["pending_pairs"] = (
+            stats["total_possible_pairs"] - stats["processed_pairs"]
+        )
 
     return stats
 
@@ -274,11 +299,15 @@ def run_prep_db(
     table.add_row("", "")
     table.add_row("Total pairs possible", f"{stats['total_possible_pairs']:,}")
     table.add_row("Processed pairs", f"{stats['processed_pairs']:,}")
-    table.add_row("[bold]Pending pairs[/bold]", f"[bold]{stats['pending_pairs']:,}[/bold]")
+    table.add_row(
+        "[bold]Pending pairs[/bold]", f"[bold]{stats['pending_pairs']:,}[/bold]"
+    )
 
     console.print(Panel(table, title="Corpus Status", border_style="green"))
 
     if stats["pending_pairs"] == 0:
         console.print("\n[green]All pairs processed! Nothing to do.[/green]")
     else:
-        console.print(f"\n[bold]Ready to process {stats['pending_pairs']:,} pairs.[/bold]")
+        console.print(
+            f"\n[bold]Ready to process {stats['pending_pairs']:,} pairs.[/bold]"
+        )

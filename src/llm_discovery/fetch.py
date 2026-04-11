@@ -1,5 +1,9 @@
-"""Fetch pipeline: download pages from Internet Archive Wayback Machine and convert to markdown."""
+"""Fetch pipeline: download pages from Internet Archive Wayback Machine.
 
+Downloads and converts to markdown.
+"""
+
+import contextlib
 import os
 import re
 import tempfile
@@ -16,9 +20,7 @@ DEFAULT_DEMO_URLS: list[str] = [
     "https://web.archive.org/web/19970404181846/http://www.kidpub.org:80/kidpub/kidpub-newest.html",
 ]
 
-_IA_URL_PATTERN = re.compile(
-    r"^https?://web\.archive\.org/web/(\d{14})/(.+)$"
-)
+_IA_URL_PATTERN = re.compile(r"^https?://web\.archive\.org/web/(\d{14})/(.+)$")
 
 
 def parse_ia_url(url: str) -> tuple[str, str]:
@@ -63,8 +65,7 @@ def download_html(original_url: str, timestamp: str) -> str:
     content_type = resp.headers.get("content-type", "")
     if "html" not in content_type.lower() and "text" not in content_type.lower():
         raise RuntimeError(
-            f"Unexpected content-type '{content_type}' for {id_url} "
-            f"(expected HTML)"
+            f"Unexpected content-type '{content_type}' for {id_url} (expected HTML)"
         )
     return resp.text
 
@@ -122,13 +123,11 @@ def fetch_single(url: str, output_dir: Path) -> Path | None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(content)
-        os.replace(tmp_path, output_path)
+        Path(tmp_path).replace(output_path)
     except BaseException:
         # Clean up temp file on any error
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
+        with contextlib.suppress(OSError):
+            Path(tmp_path).unlink()
         raise
 
     return output_path

@@ -19,7 +19,9 @@ class TestBuildRequestBody:
             content="Test document content",
             category_filename="02_explicit_age_child_references.yaml",
             system_prompt="You are a text extraction tool.",
-            category_prompts={"02_explicit_age_child_references.yaml": "Extract age references."},
+            category_prompts={
+                "02_explicit_age_child_references.yaml": "Extract age references."
+            },
             model="test-model",
         )
         assert custom_id == "r1_c2"
@@ -33,9 +35,13 @@ class TestBuildRequestBody:
 
     def test_custom_id_format(self):
         custom_id, _ = build_request_body(
-            result_id=42, category_id=7,
-            content="", category_filename="test.yaml",
-            system_prompt="", category_prompts={}, model="m",
+            result_id=42,
+            category_id=7,
+            content="",
+            category_filename="test.yaml",
+            system_prompt="",
+            category_prompts={},
+            model="m",
         )
         assert custom_id == "r42_c7"
 
@@ -64,11 +70,13 @@ class TestExtractJsonFromText:
 class TestParseResponse:
     def test_valid_response(self):
         response = {
-            "choices": [{
-                "message": {
-                    "content": '{"match": "yes", "blockquotes": ["quote1"]}',
-                },
-            }],
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"match": "yes", "blockquotes": ["quote1"]}',
+                    },
+                }
+            ],
         }
         parsed, error = parse_response("r1_c2", response, None)
         assert error is None

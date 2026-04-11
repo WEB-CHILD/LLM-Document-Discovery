@@ -22,9 +22,7 @@ console = Console()
 TMUX_SESSION = "llm-server"
 
 
-def start_vllm_server(
-    model: str, gpu_params: dict, port: int = 8000
-) -> None:
+def start_vllm_server(model: str, gpu_params: dict, port: int = 8000) -> None:
     """Start vLLM in tmux session."""
     tp = gpu_params.get("tensor_parallel_size", 4)
     gpu_mem = gpu_params.get("gpu_memory_utilization", 0.92)
@@ -49,7 +47,7 @@ def wait_for_health(port: int = 8000, timeout: int = 3600) -> None:
     while waited < timeout:
         try:
             req = urllib.request.Request(f"http://localhost:{port}/health")
-            with urllib.request.urlopen(req, timeout=5):
+            with urllib.request.urlopen(req, timeout=5):  # noqa: S310 -- localhost vLLM health check
                 console.print("[green]vLLM server is healthy[/green]")
                 return
         except (urllib.error.URLError, OSError):
@@ -63,6 +61,7 @@ def stop_vllm_server() -> None:
     subprocess.run(
         ["tmux", "kill-session", "-t", TMUX_SESSION],
         capture_output=True,
+        check=False,
     )
 
 
@@ -84,7 +83,9 @@ def run_local_pipeline(
     console.print("\n[bold]Stage 2: Preflight check[/bold]")
     result = run_preflight(db_path)
     if result["problematic"] > 0:
-        console.print(f"[yellow]Found {result['problematic']} problematic documents[/yellow]")
+        console.print(
+            f"[yellow]Found {result['problematic']} problematic documents[/yellow]"
+        )
 
     console.print("\n[bold]Stage 3: Process with LLM[/bold]")
     run_processor(

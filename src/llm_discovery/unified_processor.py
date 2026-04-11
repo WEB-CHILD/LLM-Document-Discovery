@@ -9,7 +9,6 @@ Adapted from FirstRun/unified_processor.py.
 """
 
 import json
-import os
 import queue
 import re
 import socket
@@ -126,13 +125,17 @@ def parse_response(
     if not content:
         return None, "Empty content in response"
 
+    # Extract and validate JSON from content
     result_id, category_id = parse_custom_id(custom_id)
     category_result = extract_json_from_text(content)
-    if category_result is None:
-        preview = content[:200].replace("\n", " ")
-        return None, f"No JSON found in response. Preview: {preview}..."
-    if "match" not in category_result:
-        return None, f"Missing 'match' field in JSON: {category_result}"
+
+    if category_result is None or "match" not in category_result:
+        if category_result is None:
+            preview = content[:200].replace("\n", " ")
+            reason = f"No JSON found. Preview: {preview}..."
+        else:
+            reason = f"Missing 'match' field: {category_result}"
+        return None, reason
 
     reasoning = message.get("reasoning_content", "") or extract_reasoning(content)
     return {
@@ -151,7 +154,7 @@ def parse_response(
 
 def load_system_prompt(system_prompt_path: Path) -> str:
     """Load universal system prompt."""
-    with open(system_prompt_path) as f:
+    with system_prompt_path.open() as f:
         return f.read()
 
 
@@ -159,7 +162,7 @@ def load_category_prompts(prompts_dir: Path) -> dict[str, str]:
     """Load category prompts from YAML files."""
     prompts = {}
     for yaml_file in prompts_dir.glob("*.yaml"):
-        with open(yaml_file) as f:
+        with yaml_file.open() as f:
             data = yaml.safe_load(f)
         prompts[yaml_file.name] = data.get("prompt", "")
     return prompts
@@ -226,8 +229,10 @@ def do_request(custom_id: str, body: dict[str, Any], server_url: str) -> dict[st
     response = None
     error = None
     try:
-        req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-        with urllib.request.urlopen(req, timeout=300) as resp:
+        req = urllib.request.Request(  # noqa: S310 -- controlled vLLM server URL
+            url, data=data, headers=headers, method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=300) as resp:  # noqa: S310
             raw = resp.read()
         response = json.loads(raw.decode("utf-8"))
     except urllib.error.HTTPError as e:
@@ -277,15 +282,17 @@ def get_completed_pairs(output_dir: Path) -> set[tuple[int, int]]:
     jsonl_path = output_dir / "results.jsonl"
     if jsonl_path.exists():
         try:
-            with open(jsonl_path) as f:
+            with jsonl_path.open() as f:
                 for line in f:
-                    line = line.strip()
-                    if not line:
+                    stripped = line.strip()
+                    if not stripped:
                         continue
                     try:
-                        data = json.loads(line)
+                        data = json.loads(stripped)
                         if "result_id" in data and "category_id" in data:
-                            completed.add((int(data["result_id"]), int(data["category_id"])))
+                            completed.add(
+                                (int(data["result_id"]), int(data["category_id"]))
+                            )
                     except (json.JSONDecodeError, KeyError, ValueError):
                         pass
         except OSError:
@@ -330,7 +337,9 @@ def start_run(db_path: Path, model: str) -> int:
     cursor = conn.cursor()
     hostname = socket.gethostname()
     cursor.execute(
-        "INSERT INTO run_stats (started_at, model, hostname) VALUES (datetime('now'), ?, ?)",
+        "INSERT INTO run_stats"
+        " (started_at, model, hostname)"
+        " VALUES (datetime('now'), ?, ?)",
         (model, hostname),
     )
     run_id = cursor.lastrowid
@@ -357,7 +366,15 @@ def finish_run(
            pairs_processed = ?, pairs_saved = ?, pairs_failed = ?,
            pairs_skipped = ?, processing_seconds = ?, notes = ?
            WHERE run_id = ?""",
-        (pairs_processed, pairs_saved, pairs_failed, pairs_skipped, processing_seconds, notes, run_id),
+        (
+            pairs_processed,
+            pairs_saved,
+            pairs_failed,
+            pairs_skipped,
+            processing_seconds,
+            notes,
+            run_id,
+        ),
     )
     conn.commit()
     conn.close()
@@ -376,7 +393,7 @@ def reader_thread_fn(
     system_prompt: str,
     category_prompts: dict[str, str],
     model: str,
-    metrics: Metrics,
+    _metrics: Metrics,
     limit: int | None,
 ) -> None:
     """Reader thread: fetch rows from DB, build request bodies, put on queue."""
@@ -384,26 +401,31 @@ def reader_thread_fn(
     log(f"Reader: found {len(completed)} completed pairs in output dir")
 
     limit_clause = f"LIMIT {limit * 2}" if limit else ""
-    query = f"""
-        SELECT r.result_id, r.filepath, r.content,
-               c.category_id, c.category_filename, c.category_name
-        FROM result r
-        CROSS JOIN category c
-        WHERE NOT EXISTS (
-            SELECT 1 FROM result_category rc
-            WHERE rc.result_id = r.result_id AND rc.category_id = c.category_id
-        )
-        AND (
-            r.part_number IS NOT NULL
-            OR (r.parent_result_id IS NULL AND r.part_number IS NULL
-                AND LENGTH(r.content) <= {MAX_CONTENT_LENGTH}
-                AND NOT EXISTS (
-                    SELECT 1 FROM result child WHERE child.parent_result_id = r.result_id
-                ))
-        )
-        ORDER BY r.result_id, c.category_id
-        {limit_clause}
-    """
+    max_len = MAX_CONTENT_LENGTH
+    query = (
+        f"SELECT r.result_id, r.filepath, r.content,"  # noqa: S608 -- module constants, not user input
+        f" c.category_id, c.category_filename,"
+        f" c.category_name"
+        f" FROM result r CROSS JOIN category c"
+        f" WHERE NOT EXISTS ("
+        f"   SELECT 1 FROM result_category rc"
+        f"   WHERE rc.result_id = r.result_id"
+        f"     AND rc.category_id = c.category_id"
+        f" )"
+        f" AND ("
+        f"   r.part_number IS NOT NULL"
+        f"   OR (r.parent_result_id IS NULL"
+        f"       AND r.part_number IS NULL"
+        f"       AND LENGTH(r.content) <= {max_len}"
+        f"       AND NOT EXISTS ("
+        f"         SELECT 1 FROM result child"
+        f"         WHERE child.parent_result_id"
+        f"             = r.result_id"
+        f"       ))"
+        f" )"
+        f" ORDER BY r.result_id, c.category_id"
+        f" {limit_clause}"
+    )
 
     conn = open_db(db_path)
     cursor = conn.cursor()
@@ -419,8 +441,13 @@ def reader_thread_fn(
             if (result_id, category_id) in completed:
                 continue
             custom_id, body = build_request_body(
-                result_id, category_id, content, category_filename,
-                system_prompt, category_prompts, model,
+                result_id,
+                category_id,
+                content,
+                category_filename,
+                system_prompt,
+                category_prompts,
+                model,
             )
             work_queue.put((custom_id, body))
             total_queued += 1
@@ -438,6 +465,194 @@ def reader_thread_fn(
 # ---------------------------------------------------------------------------
 # Main orchestration
 # ---------------------------------------------------------------------------
+
+
+def _count_pending_pairs(db_path: Path) -> int:
+    """Count document-category pairs pending processing."""
+    conn = open_db(db_path)
+    cursor = conn.cursor()
+    count_query = (
+        f"SELECT COUNT(*)"  # noqa: S608 -- MAX_CONTENT_LENGTH is a module constant
+        f" FROM result r CROSS JOIN category c"
+        f" WHERE NOT EXISTS ("
+        f"   SELECT 1 FROM result_category rc"
+        f"   WHERE rc.result_id = r.result_id"
+        f"     AND rc.category_id = c.category_id"
+        f" )"
+        f" AND (r.part_number IS NOT NULL"
+        f"   OR (r.parent_result_id IS NULL"
+        f"       AND r.part_number IS NULL"
+        f"       AND LENGTH(r.content)"
+        f"           <= {MAX_CONTENT_LENGTH}"
+        f"       AND NOT EXISTS ("
+        f"         SELECT 1 FROM result child"
+        f"         WHERE child.parent_result_id"
+        f"             = r.result_id"
+        f"       )))"
+    )
+    cursor.execute(count_query)
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
+
+
+def _make_processor_progress() -> Progress:
+    """Create progress bar for processing loop."""
+    return Progress(
+        SpinnerColumn(),
+        TextColumn("[bold blue]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+        TextColumn("[cyan]{task.fields[rate]:.2f} req/s"),
+        console=console,
+        refresh_per_second=4,
+    )
+
+
+def _handle_completed_future(
+    future: Any,
+    cid: str,
+    body: dict,
+    retries: int,
+    executor: ThreadPoolExecutor,
+    server_url: str,
+    output_dir: Path,
+    metrics: Metrics,
+    stats: dict,
+    stats_lock: threading.Lock,
+    futures: dict,
+) -> bool:
+    """Handle a completed future. Returns True if pair is done."""
+    max_retries = 3
+    result = future.result()
+    metrics.record_request_time(result["elapsed_sec"])
+    parsed, _ = parse_response(
+        cid,
+        result["response"],
+        result["error"],
+    )
+    if parsed:
+        saved = save_result_to_file(parsed, output_dir)
+        with stats_lock:
+            if saved:
+                stats["saved"] += 1
+            else:
+                stats["skipped"] += 1
+        return True
+    if retries < max_retries:
+        new_f = executor.submit(
+            do_request,
+            cid,
+            body,
+            server_url,
+        )
+        futures[new_f] = (cid, body, retries + 1)
+        return False
+    with stats_lock:
+        stats["failed"] += 1
+    return True
+
+
+def _run_worker_loop(
+    work_queue_obj: queue.Queue,
+    server_url: str,
+    output_dir: Path,
+    concurrency: int,
+    pairs_to_process: int,
+    metrics: Metrics,
+    stats: dict,
+    stats_lock: threading.Lock,
+) -> tuple[int, float]:
+    """Run the threaded worker loop. Returns (completed_count, elapsed)."""
+    overall_start = time.time()
+    completed_count = 0
+    progress = _make_processor_progress()
+
+    with progress:
+        task = progress.add_task(
+            f"Processing ({concurrency} workers)",
+            total=pairs_to_process,
+            rate=0.0,
+        )
+        with ThreadPoolExecutor(max_workers=concurrency) as executor:
+            futures: dict[Any, tuple[str, dict, int]] = {}
+            reader_done = False
+
+            while not reader_done or futures:
+                while not reader_done and len(futures) < concurrency * 2:
+                    try:
+                        item = work_queue_obj.get(timeout=0.1)
+                        if item is None:
+                            reader_done = True
+                            break
+                        cid, body = item
+                        fut = executor.submit(do_request, cid, body, server_url)
+                        futures[fut] = (cid, body, 0)
+                    except queue.Empty:
+                        break
+
+                for future in [f for f in futures if f.done()]:
+                    cid, body, retries = futures.pop(future)
+                    try:
+                        done = _handle_completed_future(
+                            future,
+                            cid,
+                            body,
+                            retries,
+                            executor,
+                            server_url,
+                            output_dir,
+                            metrics,
+                            stats,
+                            stats_lock,
+                            futures,
+                        )
+                        if done:
+                            completed_count += 1
+                        elapsed = time.time() - overall_start
+                        rate = completed_count / elapsed if elapsed > 0 else 0
+                        progress.update(
+                            task,
+                            completed=completed_count,
+                            rate=rate,
+                        )
+                    except Exception as e:
+                        console.print(f"[red][ERROR] Worker: {e}[/red]")
+                        with stats_lock:
+                            stats["failed"] += 1
+                        completed_count += 1
+                        progress.update(task, completed=completed_count)
+
+                time.sleep(0.01)
+
+    return completed_count, time.time() - overall_start
+
+
+def _display_run_summary(
+    stats: dict,
+    completed_count: int,
+    total_time: float,
+    processing_seconds: float,
+) -> None:
+    """Display processing summary table."""
+    table = Table(
+        title="Processing Complete",
+        show_header=False,
+        box=None,
+    )
+    table.add_column("Metric", style="bold")
+    table.add_column("Value", style="cyan")
+    table.add_row("Total time (wall)", f"{total_time:.1f}s")
+    table.add_row("Processing time (vLLM)", f"{processing_seconds:.1f}s")
+    table.add_row("Processed", str(completed_count))
+    table.add_row("Saved", str(stats["saved"]))
+    table.add_row("Skipped", str(stats["skipped"]))
+    table.add_row("Failed", str(stats["failed"]))
+    console.print()
+    console.print(Panel(table, border_style="green"))
 
 
 def run_processor(
@@ -464,34 +679,35 @@ def run_processor(
     run_id = start_run(db_path, model)
 
     # Count pending work
-    conn = open_db(db_path)
-    cursor = conn.cursor()
-    cursor.execute(f"""
-        SELECT COUNT(*) FROM result r CROSS JOIN category c
-        WHERE NOT EXISTS (
-            SELECT 1 FROM result_category rc
-            WHERE rc.result_id = r.result_id AND rc.category_id = c.category_id
-        )
-        AND (r.part_number IS NOT NULL
-            OR (r.parent_result_id IS NULL AND r.part_number IS NULL
-                AND LENGTH(r.content) <= {MAX_CONTENT_LENGTH}
-                AND NOT EXISTS (
-                    SELECT 1 FROM result child WHERE child.parent_result_id = r.result_id
-                )))
-    """)
-    pending_in_db = cursor.fetchone()[0]
-    conn.close()
-
+    pending_in_db = _count_pending_pairs(db_path)
     json_completed = get_completed_pairs(output_dir)
     pairs_to_process = min(pending_in_db, limit) if limit else pending_in_db
 
     if pairs_to_process == 0:
-        finish_run(db_path, run_id, 0, 0, 0, 0, 0.0, notes="No pairs to process")
-        return {"run_id": run_id, "total": 0, "saved": 0, "skipped": 0, "failed": 0}
+        finish_run(
+            db_path,
+            run_id,
+            0,
+            0,
+            0,
+            0,
+            0.0,
+            notes="No pairs to process",
+        )
+        return {
+            "run_id": run_id,
+            "total": 0,
+            "saved": 0,
+            "skipped": 0,
+            "failed": 0,
+        }
 
     log(f"Will process up to {pairs_to_process} pairs")
     if json_completed:
-        console.print(f"[dim]Reader will skip {len(json_completed)} pairs with existing JSON files[/dim]")
+        n_completed = len(json_completed)
+        console.print(
+            f"[dim]Reader will skip {n_completed} pairs with existing JSON files[/dim]"
+        )
 
     # Set up queues and events
     work_queue_obj: queue.Queue = queue.Queue(maxsize=WORK_QUEUE_MAXSIZE)
@@ -503,108 +719,48 @@ def run_processor(
     # Start reader thread
     reader = threading.Thread(
         target=reader_thread_fn,
-        args=(str(db_path), output_dir, work_queue_obj, stop_event,
-              system_prompt, category_prompts, model, metrics, limit),
+        args=(
+            str(db_path),
+            output_dir,
+            work_queue_obj,
+            stop_event,
+            system_prompt,
+            category_prompts,
+            model,
+            metrics,
+            limit,
+        ),
     )
     reader.start()
 
     # Process with thread pool
-    overall_start = time.time()
-    completed_count = 0
-
-    progress = Progress(
-        SpinnerColumn(),
-        TextColumn("[bold blue]{task.description}"),
-        BarColumn(),
-        MofNCompleteColumn(),
-        TaskProgressColumn(),
-        TimeElapsedColumn(),
-        TimeRemainingColumn(),
-        TextColumn("[cyan]{task.fields[rate]:.2f} req/s"),
-        console=console,
-        refresh_per_second=4,
+    completed_count, total_time = _run_worker_loop(
+        work_queue_obj,
+        server_url,
+        output_dir,
+        concurrency,
+        pairs_to_process,
+        metrics,
+        stats,
+        stats_lock,
     )
-
-    with progress:
-        task = progress.add_task(
-            f"Processing ({concurrency} workers)", total=pairs_to_process, rate=0.0,
-        )
-        with ThreadPoolExecutor(max_workers=concurrency) as executor:
-            futures: dict[Any, tuple[str, dict, int]] = {}
-            reader_done = False
-            max_retries = 3
-
-            while not reader_done or futures:
-                while not reader_done and len(futures) < concurrency * 2:
-                    try:
-                        item = work_queue_obj.get(timeout=0.1)
-                        if item is None:
-                            reader_done = True
-                            break
-                        custom_id, body = item
-                        future = executor.submit(do_request, custom_id, body, server_url)
-                        futures[future] = (custom_id, body, 0)
-                    except queue.Empty:
-                        break
-
-                done_futures = [f for f in futures if f.done()]
-                for future in done_futures:
-                    custom_id, body, retry_count = futures.pop(future)
-                    try:
-                        result = future.result()
-                        metrics.record_request_time(result["elapsed_sec"])
-                        parsed, failure_reason = parse_response(
-                            custom_id, result["response"], result["error"]
-                        )
-                        if parsed:
-                            saved = save_result_to_file(parsed, output_dir)
-                            with stats_lock:
-                                if saved:
-                                    stats["saved"] += 1
-                                else:
-                                    stats["skipped"] += 1
-                            completed_count += 1
-                        else:
-                            if retry_count < max_retries:
-                                new_future = executor.submit(do_request, custom_id, body, server_url)
-                                futures[new_future] = (custom_id, body, retry_count + 1)
-                            else:
-                                with stats_lock:
-                                    stats["failed"] += 1
-                                completed_count += 1
-
-                        elapsed = time.time() - overall_start
-                        rate = completed_count / elapsed if elapsed > 0 else 0
-                        progress.update(task, completed=completed_count, rate=rate)
-                    except Exception as e:
-                        console.print(f"[red][ERROR] Worker exception: {e}[/red]")
-                        with stats_lock:
-                            stats["failed"] += 1
-                        completed_count += 1
-                        progress.update(task, completed=completed_count)
-
-                time.sleep(0.01)
 
     reader.join(timeout=60)
     stop_event.set()
 
-    total_time = time.time() - overall_start
     processing_seconds = sum(metrics.request_times) if metrics.request_times else 0.0
 
-    finish_run(db_path, run_id, completed_count, stats["saved"],
-               stats["failed"], stats["skipped"], processing_seconds)
+    finish_run(
+        db_path,
+        run_id,
+        completed_count,
+        stats["saved"],
+        stats["failed"],
+        stats["skipped"],
+        processing_seconds,
+    )
 
-    table = Table(title="Processing Complete", show_header=False, box=None)
-    table.add_column("Metric", style="bold")
-    table.add_column("Value", style="cyan")
-    table.add_row("Total time (wall)", f"{total_time:.1f}s")
-    table.add_row("Processing time (vLLM)", f"{processing_seconds:.1f}s")
-    table.add_row("Processed", str(completed_count))
-    table.add_row("Saved", str(stats["saved"]))
-    table.add_row("Skipped", str(stats["skipped"]))
-    table.add_row("Failed", str(stats["failed"]))
-    console.print()
-    console.print(Panel(table, border_style="green"))
+    _display_run_summary(stats, completed_count, total_time, processing_seconds)
 
     return {
         "run_id": run_id,

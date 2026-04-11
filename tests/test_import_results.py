@@ -29,10 +29,14 @@ class TestImportRecord:
         assert stats["imported"] == 1
         assert bq_count == 2
 
-        cursor.execute("SELECT match FROM result_category WHERE result_id = 1 AND category_id = 1")
+        cursor.execute(
+            "SELECT match FROM result_category WHERE result_id = 1 AND category_id = 1"
+        )
         assert cursor.fetchone()[0] == "yes"
 
-        cursor.execute("SELECT COUNT(*) FROM result_category_blockquote WHERE result_id = 1")
+        cursor.execute(
+            "SELECT COUNT(*) FROM result_category_blockquote WHERE result_id = 1"
+        )
         assert cursor.fetchone()[0] == 2
         conn.close()
 
@@ -69,7 +73,9 @@ class TestImportRecord:
 
 
 class TestRunImport:
-    def test_imports_json_files(self, tmp_db, sample_corpus_dir, sample_prompts_dir, tmp_path):
+    def test_imports_json_files(
+        self, tmp_db, sample_corpus_dir, sample_prompts_dir, tmp_path
+    ):
         sync_categories(tmp_db, sample_prompts_dir)
         sync_documents(tmp_db, sample_corpus_dir)
 

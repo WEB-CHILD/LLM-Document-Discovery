@@ -7,7 +7,9 @@ from llm_discovery.preflight_check import check_document, run_preflight
 
 class TestCheckDocument:
     def test_valid_markdown_passes(self):
-        content = "20040701020553/http://www.example.com/\n\n" + "Valid text content. " * 20
+        content = (
+            "20040701020553/http://www.example.com/\n\n" + "Valid text content. " * 20
+        )
         is_valid, reason = check_document(content)
         assert is_valid is True
         assert reason == ""
@@ -36,7 +38,10 @@ class TestCheckDocument:
         assert "short" in reason
 
     def test_null_bytes_rejected(self):
-        content = "20040701020553/http://www.example.com/\n\n" + "Valid text\x00more text" * 20
+        content = (
+            "20040701020553/http://www.example.com/\n\n"
+            + "Valid text\x00more text" * 20
+        )
         is_valid, reason = check_document(content)
         assert is_valid is False
         assert "null" in reason
@@ -53,6 +58,7 @@ class TestRunPreflight:
     def test_all_valid_documents(self, tmp_db, sample_corpus_dir):
         # First sync documents into the DB
         from llm_discovery.prep_db import sync_documents
+
         sync_documents(tmp_db, sample_corpus_dir)
 
         result = run_preflight(tmp_db)
@@ -70,7 +76,11 @@ class TestRunPreflight:
         )
         cursor.execute(
             "INSERT INTO result (filepath, content, content_sha256) VALUES (?, ?, ?)",
-            ("good.md", "20040701020553/http://x.com/\n\n" + "Valid content. " * 20, "def456"),
+            (
+                "good.md",
+                "20040701020553/http://x.com/\n\n" + "Valid content. " * 20,
+                "def456",
+            ),
         )
         conn.commit()
         conn.close()

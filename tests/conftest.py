@@ -13,7 +13,7 @@ def tmp_db(tmp_path):
     db_path = tmp_path / "test_corpus.db"
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    with open(schema_path) as f:
+    with schema_path.open() as f:
         cursor.executescript(f.read())
     conn.commit()
     conn.close()
@@ -22,26 +22,26 @@ def tmp_db(tmp_path):
 
 @pytest.fixture
 def sample_corpus_dir(tmp_path):
-    """Create a temp directory with sample markdown files (with timestamp/url header)."""
+    """Create a temp dir with sample markdown files (with timestamp/url header)."""
     corpus_dir = tmp_path / "corpus"
     corpus_dir.mkdir()
 
     files = {
         "doc1.md": "20040701020553/http://www.kidlink.org:80/KIDFORUM/\n\n"
-                    "# Welcome to KIDFORUM\n\n"
-                    "This is a forum for kids aged 10-15 to discuss topics.\n"
-                    "We love sharing ideas and making new friends!\n"
-                    "Let's explore the world together.\n" * 5,
+        "# Welcome to KIDFORUM\n\n"
+        "This is a forum for kids aged 10-15 to discuss topics.\n"
+        "We love sharing ideas and making new friends!\n"
+        "Let's explore the world together.\n" * 5,
         "doc2.md": "20040701022600/http://www.kidlink.org:80/KIDPROJ/\n\n"
-                    "# Kidlink Project\n\n"
-                    "Students from around the world share their capitals.\n"
-                    "My name is Maria and I am 12 years old from Denmark.\n"
-                    "Vi elsker at lære om andre lande!\n" * 5,
+        "# Kidlink Project\n\n"
+        "Students from around the world share their capitals.\n"
+        "My name is Maria and I am 12 years old from Denmark.\n"
+        "Vi elsker at lære om andre lande!\n" * 5,
         "doc3.md": "19970404181846/http://www.kidpub.org:80/\n\n"
-                    "# KidPub Stories\n\n"
-                    "Here are the newest stories written by kids.\n"
-                    "Check out these amazing tales from young authors.\n"
-                    "Children ages 5-17 can publish their work here.\n" * 5,
+        "# KidPub Stories\n\n"
+        "Here are the newest stories written by kids.\n"
+        "Check out these amazing tales from young authors.\n"
+        "Children ages 5-17 can publish their work here.\n" * 5,
     }
 
     for name, content in files.items():
@@ -62,7 +62,7 @@ def sample_prompts_dir(tmp_path):
             "name: explicit_age_child_references\n"
             "description: Direct mentions of ages 5-17 or child-related terms\n"
             "prompt: |\n"
-            '  Extract text containing age numbers 5-17, or words: "kids", "children".\n'
+            '  Extract text with age numbers 5-17, or words: "kids", "children".\n'
             "  Analyze the following document and extract matching passages:\n"
         ),
         "03_corporate_register_markers.yaml": (
@@ -70,7 +70,7 @@ def sample_prompts_dir(tmp_path):
             "name: corporate_register_markers\n"
             "description: Corporate or institutional language patterns\n"
             "prompt: |\n"
-            '  Extract text containing corporate language: "terms of service", "policy".\n'
+            '  Extract corporate language: "terms of service", "policy".\n'
             "  Analyze the following document and extract matching passages:\n"
         ),
     }

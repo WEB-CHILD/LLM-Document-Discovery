@@ -1,6 +1,5 @@
 """Tests for the fetch pipeline (Wayback Machine -> HTML -> markdown)."""
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -93,7 +92,10 @@ class TestVerifySnapshot:
         mock_resp.raise_for_status = MagicMock()
         mock_get.return_value = mock_resp
 
-        assert verify_snapshot("http://www.kidlink.org:80/KIDFORUM/", "20040701020553") is True
+        assert (
+            verify_snapshot("http://www.kidlink.org:80/KIDFORUM/", "20040701020553")
+            is True
+        )
 
     @patch("llm_discovery.fetch.requests.get")
     def test_returns_false_when_no_snapshot(self, mock_get):
@@ -102,7 +104,9 @@ class TestVerifySnapshot:
         mock_resp.raise_for_status = MagicMock()
         mock_get.return_value = mock_resp
 
-        assert verify_snapshot("http://example.com/nonexistent", "20990101000000") is False
+        assert (
+            verify_snapshot("http://example.com/nonexistent", "20990101000000") is False
+        )
 
 
 # --- download_html (mocked) ---
@@ -127,7 +131,9 @@ class TestDownloadHtml:
     @patch("llm_discovery.fetch.requests.get")
     def test_raises_on_http_error(self, mock_get):
         mock_resp = MagicMock()
-        mock_resp.raise_for_status.side_effect = requests.exceptions.HTTPError("404 Not Found")
+        mock_resp.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            "404 Not Found"
+        )
         mock_get.return_value = mock_resp
 
         with pytest.raises(RuntimeError):
@@ -197,7 +203,9 @@ class TestFetchCorpus:
         mock_single.side_effect = RuntimeError("fail")
         with pytest.raises(RuntimeError, match="fail"):
             fetch_corpus(
-                ["https://web.archive.org/web/20040701020553/http://www.kidlink.org:80/KIDFORUM/"],
+                [
+                    "https://web.archive.org/web/20040701020553/http://www.kidlink.org:80/KIDFORUM/"
+                ],
                 tmp_path,
             )
 
@@ -222,7 +230,9 @@ class TestFetchCorpus:
 class TestFetchIntegration:
     """Integration tests that hit the live Internet Archive API."""
 
-    KNOWN_GOOD_URL = "https://web.archive.org/web/20040701020553/http://www.kidlink.org:80/KIDFORUM/"
+    KNOWN_GOOD_URL = (
+        "https://web.archive.org/web/20040701020553/http://www.kidlink.org:80/KIDFORUM/"
+    )
 
     def test_fetch_single_produces_valid_markdown(self, tmp_path):
         result = fetch_single(self.KNOWN_GOOD_URL, tmp_path)

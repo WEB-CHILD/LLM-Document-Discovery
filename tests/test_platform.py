@@ -4,10 +4,10 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from llm_discovery.platform import (
     PlatformConfig,
-    PlatformsConfig,
     load_platforms,
     resolve_remote_path,
     validate_platform,
@@ -37,7 +37,7 @@ class TestLoadPlatforms:
     def test_raises_on_invalid_yaml(self, tmp_path):
         bad_yaml = tmp_path / "bad.yaml"
         bad_yaml.write_text("platforms:\n  gadi:\n    display_name: 123\n")
-        with pytest.raises(Exception):  # pydantic ValidationError
+        with pytest.raises(ValidationError):
             load_platforms(bad_yaml)
 
 
@@ -128,4 +128,6 @@ class TestValidatePlatform:
             checks=[{"name": "scratch check", "command": "test -d /scratch/{project}"}],
         )
         validate_platform(platform, project="ab12")
-        mock_conn.run.assert_called_once_with("test -d /scratch/ab12", warn=True, hide=True)
+        mock_conn.run.assert_called_once_with(
+            "test -d /scratch/ab12", warn=True, hide=True
+        )

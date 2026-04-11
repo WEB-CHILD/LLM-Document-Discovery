@@ -16,12 +16,14 @@ console = Console()
 
 class PlatformCheck(BaseModel):
     """A single validation check to run on a platform."""
+
     name: str
     command: str | None = None
 
 
 class PlatformConfig(BaseModel):
     """Configuration for an HPC platform."""
+
     display_name: str
     ssh_host: str | None = None
     remote_base: str
@@ -34,6 +36,7 @@ class PlatformConfig(BaseModel):
 
 class PlatformsConfig(BaseModel):
     """Top-level platforms configuration."""
+
     platforms: dict[str, PlatformConfig]
 
 
@@ -42,7 +45,7 @@ def load_platforms(config_path: Path | str) -> PlatformsConfig:
     config_path = Path(config_path)
     if not config_path.exists():
         raise FileNotFoundError(f"Platform config not found: {config_path}")
-    with open(config_path) as f:
+    with config_path.open() as f:
         data = yaml.safe_load(f)
     return PlatformsConfig(**data)
 
@@ -72,7 +75,9 @@ def validate_platform(
     try:
         conn = Connection(platform.ssh_host)
     except Exception as exc:
-        return [(platform.checks[0].name if platform.checks else "SSH", False, str(exc))]
+        return [
+            (platform.checks[0].name if platform.checks else "SSH", False, str(exc))
+        ]
 
     for check in platform.checks:
         if check.command is None:
@@ -89,7 +94,13 @@ def validate_platform(
                 output = result.stdout.strip()[:80] if result.stdout else ""
                 results.append((check.name, True, output))
             else:
-                results.append((check.name, False, result.stderr.strip()[:80] if result.stderr else "failed"))
+                results.append(
+                    (
+                        check.name,
+                        False,
+                        result.stderr.strip()[:80] if result.stderr else "failed",
+                    )
+                )
         except Exception as exc:
             results.append((check.name, False, str(exc)[:80]))
 
@@ -119,15 +130,22 @@ def display_validation_results(
 def rsync_to_remote(platform: PlatformConfig, local_dir: Path, project: str) -> None:
     """Rsync code to remote HPC. No --delete to protect model cache."""
     if platform.ssh_host is None:
-        raise RuntimeError(f"Platform {platform.display_name} has no SSH host — cannot rsync")
+        raise RuntimeError(
+            f"Platform {platform.display_name} has no SSH host — cannot rsync"
+        )
     remote_path = resolve_remote_path(platform, project)
     subprocess.run(
         [
-            "rsync", "-avz",
-            "--exclude=.venv/", "--exclude=__pycache__/",
-            "--exclude=*.db", "--exclude=*.pyc",
-            "--exclude=.git/", "--exclude=input/",
-            "--exclude=out/", "--exclude=*.log",
+            "rsync",
+            "-avz",
+            "--exclude=.venv/",
+            "--exclude=__pycache__/",
+            "--exclude=*.db",
+            "--exclude=*.pyc",
+            "--exclude=.git/",
+            "--exclude=input/",
+            "--exclude=out/",
+            "--exclude=*.log",
             str(local_dir) + "/",
             f"{platform.ssh_host}:{remote_path}/",
         ],
@@ -144,7 +162,9 @@ def submit_gadi_job(
         raise FileNotFoundError(f"PBS template not found: {template_path}")
 
     template = template_path.read_text()
-    pbs_script = template.replace("{{GPU_QUEUE}}", gpu_queue).replace("{{NCI_PROJECT}}", project)
+    pbs_script = template.replace("{{GPU_QUEUE}}", gpu_queue).replace(
+        "{{NCI_PROJECT}}", project
+    )
 
     remote_path = resolve_remote_path(platform, project)
     conn = Connection(platform.ssh_host)
@@ -158,32 +178,35 @@ def submit_gadi_job(
     return job_id
 
 
-def submit_ucloud_job(platform: PlatformConfig) -> str | None:
+def submit_ucloud_job(_platform: PlatformConfig) -> str | None:
     """Submit UCloud job. Returns None (manual submission required)."""
-    console.print(Panel(
-        "[bold]UCloud automated submission not available.[/bold]\n\n"
-        "Manual steps:\n"
-        "1. Open UCloud web portal at [link]https://cloud.sdu.dk[/link]\n"
-        "2. Create a new Terminal App job\n"
-        "3. Select GPU: H100, 4 GPUs\n"
-        "4. Mount /work/llm-discovery\n"
-        "5. In terminal, run: [bold]bash scripts/process_corpus.sh[/bold]",
-        title="UCloud Manual Submission",
-        border_style="yellow",
-    ))
+    console.print(
+        Panel(
+            "[bold]UCloud automated submission not available.[/bold]\n\n"
+            "Manual steps:\n"
+            "1. Open UCloud web portal at [link]https://cloud.sdu.dk[/link]\n"
+            "2. Create a new Terminal App job\n"
+            "3. Select GPU: H100, 4 GPUs\n"
+            "4. Mount /work/llm-discovery\n"
+            "5. In terminal, run: [bold]bash scripts/process_corpus.sh[/bold]",
+            title="UCloud Manual Submission",
+            border_style="yellow",
+        )
+    )
     return None
 
 
-def retrieve_results(
-    platform: PlatformConfig, local_path: Path, project: str
-) -> Path:
+def retrieve_results(platform: PlatformConfig, local_path: Path, project: str) -> Path:
     """Rsync corpus.db from remote to local."""
     if platform.ssh_host is None:
-        raise RuntimeError(f"Platform {platform.display_name} has no SSH host — cannot retrieve")
+        raise RuntimeError(
+            f"Platform {platform.display_name} has no SSH host — cannot retrieve"
+        )
     remote_path = resolve_remote_path(platform, project)
     subprocess.run(
         [
-            "rsync", "-avz",
+            "rsync",
+            "-avz",
             f"{platform.ssh_host}:{remote_path}/corpus.db",
             str(local_path),
         ],
@@ -193,7 +216,7 @@ def retrieve_results(
 
 
 def check_job_status(
-    platform: PlatformConfig, job_id: str, project: str | None = None
+    platform: PlatformConfig, job_id: str, _project: str | None = None
 ) -> str:
     """Check job status on HPC. Returns status string."""
     if platform.ssh_host is None:
@@ -204,10 +227,15 @@ def check_job_status(
         return "completed or not found"
     # Parse qstat output for status column
     for line in result.stdout.strip().split("\n"):
-        if job_id.split(".")[0] in line:
+        if job_id.split(".", maxsplit=1)[0] in line:
             parts = line.split()
             if len(parts) >= 5:
                 status_code = parts[-2]
-                status_map = {"Q": "queued", "R": "running", "F": "finished", "E": "exiting"}
+                status_map = {
+                    "Q": "queued",
+                    "R": "running",
+                    "F": "finished",
+                    "E": "exiting",
+                }
                 return status_map.get(status_code, status_code)
     return "unknown"

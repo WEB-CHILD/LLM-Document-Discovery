@@ -19,7 +19,9 @@ app = typer.Typer(
 
 @app.command()
 def fetch(
-    urls: list[str] = typer.Argument(None, help="Internet Archive URLs to fetch (defaults to 5 demo URLs)"),
+    urls: list[str] = typer.Argument(
+        None, help="Internet Archive URLs to fetch (defaults to 5 demo URLs)"
+    ),
     output_dir: Path = typer.Option(
         "input/demo_corpus", help="Directory to write markdown files to"
     ),
@@ -45,7 +47,9 @@ def fetch(
             rprint(f"  [red]error[/red] {url}: {exc}")
             failed += 1
 
-    rprint(f"[green]Done.[/green] Fetched {written}, skipped {skipped}, failed {failed}.")
+    rprint(
+        f"[green]Done.[/green] Fetched {written}, skipped {skipped}, failed {failed}."
+    )
     if failed:
         raise typer.Exit(1)
 
@@ -81,7 +85,10 @@ def preflight(
         rprint(f"[red]Error: database not found: {db}[/red]")
         raise typer.Exit(1)
     result = run_preflight(db, delete=delete)
-    rprint(f"Total: {result['total']}, Valid: {result['valid']}, Problematic: {result['problematic']}")
+    rprint(
+        f"Total: {result['total']}, Valid: {result['valid']},"
+        f" Problematic: {result['problematic']}"
+    )
     if result["by_reason"]:
         for reason, count in sorted(result["by_reason"].items(), key=lambda x: -x[1]):
             rprint(f"  {reason}: {count}")
@@ -108,9 +115,13 @@ def process(
         rprint("[red]Error: system_prompt.txt not found[/red]")
         raise typer.Exit(1)
     run_processor(
-        db_path=db, output_dir=output_dir, server_url=server_url,
-        system_prompt_path=system_prompt_path, concurrency=concurrency,
-        limit=limit, model=model,
+        db_path=db,
+        output_dir=output_dir,
+        server_url=server_url,
+        system_prompt_path=system_prompt_path,
+        concurrency=concurrency,
+        limit=limit,
+        model=model,
     )
 
 
@@ -143,7 +154,11 @@ def _ensure_validated(platform_name: str, project: str | None) -> bool:
         return False
     platforms = load_platforms(config_path)
     if platform_name not in platforms.platforms:
-        rprint(f"[red]Error: unknown platform '{platform_name}'. Available: {', '.join(platforms.platforms)}[/red]")
+        available = ", ".join(platforms.platforms)
+        rprint(
+            f"[red]Error: unknown platform"
+            f" '{platform_name}'. Available: {available}[/red]"
+        )
         return False
     platform_config = platforms.platforms[platform_name]
     results = validate_platform(platform_config, project=project)
@@ -164,7 +179,9 @@ def validate(
 def deploy(
     platform: str = typer.Option(..., help="HPC platform: gadi or ucloud"),
     project: str = typer.Option(None, help="NCI project code (for Gadi)"),
-    gpu_queue: str = typer.Option("gpuhopper", help="Gadi GPU queue: gpuhopper or gpuvolta"),
+    gpu_queue: str = typer.Option(
+        "gpuhopper", help="Gadi GPU queue: gpuhopper or gpuvolta"
+    ),
 ) -> None:
     """Sync code to HPC and submit job."""
     from llm_discovery.platform import (
@@ -185,7 +202,7 @@ def deploy(
     # Rsync code to remote (if SSH available)
     if platform_config.ssh_host:
         rprint(f"[bold]Syncing code to {platform_config.display_name}...[/bold]")
-        rsync_to_remote(platform_config, Path("."), project or "")
+        rsync_to_remote(platform_config, Path(), project or "")
 
     # Submit job
     if platform == "gadi":
@@ -195,7 +212,10 @@ def deploy(
         rprint(f"[bold]Submitting PBS job to {gpu_queue} queue...[/bold]")
         job_id = submit_gadi_job(platform_config, project, gpu_queue)
         rprint(f"[green]Job submitted: {job_id}[/green]")
-        rprint(f"[dim]Check status: llm-discovery status --platform gadi --job-id {job_id}[/dim]")
+        rprint(
+            f"[dim]Check status: llm-discovery status"
+            f" --platform gadi --job-id {job_id}[/dim]"
+        )
     elif platform == "ucloud":
         submit_ucloud_job(platform_config)
     else:
@@ -252,17 +272,154 @@ def retrieve(
     rprint(f"[green]Retrieved to: {local_path}[/green]")
 
 
+def _run_local_pipeline(
+    output_dir: Path,
+    model: str | None,
+    gpu_type: str | None,
+) -> None:
+    """Run the full pipeline locally with vLLM server management."""
+    import yaml
+
+    from llm_discovery.local_runner import (
+        run_local_pipeline,
+        start_vllm_server,
+        stop_vllm_server,
+        wait_for_health,
+    )
+
+    # Load GPU params
+    config_path = Path("config/machines.yaml")
+    if config_path.exists():
+        with config_path.open() as f:
+            machines = yaml.safe_load(f)
+        default_model = model or machines.get("default_model", "openai/gpt-oss-20b")
+        gpu_type_key = gpu_type or "H100"
+        gpu_types = machines.get("gpu_types", {})
+        if gpu_type_key not in gpu_types:
+            available = ", ".join(gpu_types.keys())
+            rprint(
+                f"[red]Unknown GPU type '{gpu_type_key}'. Available: {available}[/red]"
+            )
+            raise typer.Exit(1)
+        gpu_params = gpu_types[gpu_type_key]
+    else:
+        default_model = model or "openai/gpt-oss-20b"
+        gpu_params = {
+            "tensor_parallel_size": 1,
+            "gpu_memory_utilization": 0.90,
+            "max_num_seqs": 64,
+        }
+
+    rprint("\n[bold]===== Stage: Local Pipeline =====[/bold]")
+    try:
+        start_vllm_server(default_model, gpu_params)
+        wait_for_health()
+        run_local_pipeline(
+            db_path=Path("corpus.db"),
+            input_dir=output_dir,
+            output_dir=Path("out"),
+            prompts_dir=Path("prompts"),
+            server_url="http://localhost:8000",
+            system_prompt_path=Path("system_prompt.txt"),
+            model=default_model,
+        )
+    finally:
+        stop_vllm_server()
+
+
+def _run_remote_pipeline(
+    platform: str,
+    project: str | None,
+    gpu_queue: str,
+    yes: bool,
+) -> None:
+    """Run the remote pipeline: validate, deploy, poll, retrieve."""
+    from llm_discovery.platform import (
+        check_job_status,
+        load_platforms,
+        retrieve_results,
+        rsync_to_remote,
+        submit_gadi_job,
+        submit_ucloud_job,
+    )
+
+    rprint("\n[bold]===== Stage: Validate =====[/bold]")
+    if not _ensure_validated(platform, project):
+        rprint("[red]Validation failed.[/red]")
+        raise typer.Exit(1)
+
+    if not yes and not typer.confirm("Validation passed. Deploy?", default=True):
+        raise typer.Exit(0)
+
+    rprint("\n[bold]===== Stage: Deploy =====[/bold]")
+    platforms_config = load_platforms(Path("config/platforms.yaml"))
+    platform_config = platforms_config.platforms[platform]
+
+    if platform_config.ssh_host:
+        rsync_to_remote(platform_config, Path(), project or "")
+
+    job_id = None
+    if platform == "gadi":
+        if not project:
+            rprint("[red]Error: --project required for Gadi[/red]")
+            raise typer.Exit(1)
+        job_id = submit_gadi_job(platform_config, project, gpu_queue)
+        rprint(f"[green]Job submitted: {job_id}[/green]")
+    elif platform == "ucloud":
+        submit_ucloud_job(platform_config)
+        rprint("[dim]UCloud requires manual submission -- poll manually.[/dim]")
+        raise typer.Exit(0)
+
+    # Poll status
+    if job_id:
+        import time as _time
+
+        rprint("\n[bold]===== Stage: Polling =====[/bold]")
+        while True:
+            status_str = check_job_status(platform_config, job_id, project)
+            rprint(f"  Job {job_id}: {status_str}")
+            if status_str in (
+                "finished",
+                "completed or not found",
+            ):
+                break
+            _time.sleep(60)
+
+    # Retrieve
+    if not yes and not typer.confirm("Retrieve results?", default=True):
+        raise typer.Exit(0)
+
+    rprint("\n[bold]===== Stage: Retrieve =====[/bold]")
+    retrieve_results(platform_config, Path("corpus.db"), project or "")
+    rprint("[green]Pipeline complete. Results in corpus.db[/green]")
+
+
 @app.command()
 def run(
     platform: str = typer.Option("local", help="Platform: gadi, ucloud, or local"),
     project: str = typer.Option(None, help="NCI project code (for Gadi)"),
-    gpu_queue: str = typer.Option("gpuhopper", help="Gadi GPU queue: gpuhopper or gpuvolta"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip interactive prompts (unattended mode)"),
-    urls: list[str] = typer.Argument(None, help="Internet Archive URLs (defaults to demo)"),
-    model: str = typer.Option(None, help="Override model name (e.g., google/gemma-4-12b for local testing)"),
-    gpu_type: str = typer.Option(None, help="GPU type from machines.yaml (e.g., RTX4090, V100, H100)"),
+    gpu_queue: str = typer.Option(
+        "gpuhopper", help="Gadi GPU queue: gpuhopper or gpuvolta"
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip interactive prompts (unattended mode)",
+    ),
+    urls: list[str] = typer.Argument(
+        None, help="Internet Archive URLs (defaults to demo)"
+    ),
+    model: str = typer.Option(
+        None,
+        help="Override model name (e.g., google/gemma-4-12b)",
+    ),
+    gpu_type: str = typer.Option(
+        None,
+        help="GPU type from machines.yaml (e.g., RTX4090, H100)",
+    ),
 ) -> None:
-    """Execute the complete pipeline: fetch -> validate -> deploy -> status -> retrieve."""
+    """Execute the complete pipeline."""
     from llm_discovery.fetch import DEFAULT_DEMO_URLS, fetch_single
 
     # Stage 1: Fetch
@@ -278,116 +435,15 @@ def run(
                 rprint(f"  [green]fetched[/green] {result.name}")
                 written += 1
             else:
-                rprint(f"  [dim]skipped[/dim] (already exists)")
+                rprint("  [dim]skipped[/dim] (already exists)")
         except Exception as exc:
             rprint(f"  [red]error[/red] {url}: {exc}")
     rprint(f"Fetched {written} new documents.")
 
-    if not yes:
-        if not typer.confirm("Continue?", default=True):
-            raise typer.Exit(0)
+    if not yes and not typer.confirm("Continue?", default=True):
+        raise typer.Exit(0)
 
     if platform == "local":
-        # Local mode: run pipeline directly
-        from llm_discovery.local_runner import (
-            run_local_pipeline,
-            start_vllm_server,
-            stop_vllm_server,
-            wait_for_health,
-        )
-
-        import yaml
-
-        # Load GPU params
-        config_path = Path("config/machines.yaml")
-        if config_path.exists():
-            with open(config_path) as f:
-                machines = yaml.safe_load(f)
-            default_model = model or machines.get("default_model", "openai/gpt-oss-20b")
-            gpu_type_key = gpu_type or "H100"
-            gpu_types = machines.get("gpu_types", {})
-            if gpu_type_key not in gpu_types:
-                available = ", ".join(gpu_types.keys())
-                rprint(f"[red]Unknown GPU type '{gpu_type_key}'. Available: {available}[/red]")
-                raise typer.Exit(1)
-            gpu_params = gpu_types[gpu_type_key]
-        else:
-            default_model = model or "openai/gpt-oss-20b"
-            gpu_params = {"tensor_parallel_size": 1, "gpu_memory_utilization": 0.90, "max_num_seqs": 64}
-
-        rprint("\n[bold]===== Stage: Local Pipeline =====[/bold]")
-        try:
-            start_vllm_server(default_model, gpu_params)
-            wait_for_health()
-            run_local_pipeline(
-                db_path=Path("corpus.db"),
-                input_dir=output_dir,
-                output_dir=Path("out"),
-                prompts_dir=Path("prompts"),
-                server_url="http://localhost:8000",
-                system_prompt_path=Path("system_prompt.txt"),
-                model=default_model,
-            )
-        finally:
-            stop_vllm_server()
+        _run_local_pipeline(output_dir, model, gpu_type)
     else:
-        # Remote mode: validate -> deploy -> poll -> retrieve
-        rprint("\n[bold]===== Stage: Validate =====[/bold]")
-        if not _ensure_validated(platform, project):
-            rprint("[red]Validation failed.[/red]")
-            raise typer.Exit(1)
-
-        if not yes:
-            if not typer.confirm("Validation passed. Deploy?", default=True):
-                raise typer.Exit(0)
-
-        rprint("\n[bold]===== Stage: Deploy =====[/bold]")
-        from llm_discovery.platform import (
-            load_platforms,
-            rsync_to_remote,
-            submit_gadi_job,
-            submit_ucloud_job,
-        )
-
-        platforms_config = load_platforms(Path("config/platforms.yaml"))
-        platform_config = platforms_config.platforms[platform]
-
-        if platform_config.ssh_host:
-            rsync_to_remote(platform_config, Path("."), project or "")
-
-        job_id = None
-        if platform == "gadi":
-            if not project:
-                rprint("[red]Error: --project required for Gadi[/red]")
-                raise typer.Exit(1)
-            job_id = submit_gadi_job(platform_config, project, gpu_queue)
-            rprint(f"[green]Job submitted: {job_id}[/green]")
-        elif platform == "ucloud":
-            submit_ucloud_job(platform_config)
-            rprint("[dim]UCloud requires manual submission — poll manually.[/dim]")
-            raise typer.Exit(0)
-
-        # Poll status
-        if job_id:
-            from llm_discovery.platform import check_job_status
-
-            rprint("\n[bold]===== Stage: Polling =====[/bold]")
-            import time as _time
-
-            while True:
-                status_str = check_job_status(platform_config, job_id, project)
-                rprint(f"  Job {job_id}: {status_str}")
-                if status_str in ("finished", "completed or not found"):
-                    break
-                _time.sleep(60)
-
-        # Retrieve
-        if not yes:
-            if not typer.confirm("Retrieve results?", default=True):
-                raise typer.Exit(0)
-
-        rprint("\n[bold]===== Stage: Retrieve =====[/bold]")
-        from llm_discovery.platform import retrieve_results
-
-        retrieve_results(platform_config, Path("corpus.db"), project or "")
-        rprint("[green]Pipeline complete. Results in corpus.db[/green]")
+        _run_remote_pipeline(platform, project, gpu_queue, yes)

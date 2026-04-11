@@ -76,7 +76,7 @@ def is_valid_text_content(content: str) -> tuple[bool, str]:
 def sha256_file(filepath: Path) -> str:
     """Calculate SHA-256 hash of file contents."""
     sha256 = hashlib.sha256()
-    with open(filepath, "rb") as f:
+    with filepath.open("rb") as f:
         for chunk in iter(lambda: f.read(8192), b""):
             sha256.update(chunk)
     return sha256.hexdigest()

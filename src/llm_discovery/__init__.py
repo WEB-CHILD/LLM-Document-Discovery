@@ -1,1 +1,4 @@
-"""LLM Document Discovery — reproducible pipeline for classifying historical web documents."""
+"""LLM Document Discovery.
+
+Reproducible pipeline for classifying historical web documents.
+"""

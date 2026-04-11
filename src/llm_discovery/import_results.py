@@ -38,8 +38,12 @@ def import_record(cursor: sqlite3.Cursor, data: dict, stats: dict) -> int:
             """INSERT OR IGNORE INTO result_category
                (result_id, category_id, match, reasoning_trace)
                VALUES (?, ?, ?, ?)""",
-            (data["result_id"], data["category_id"], data["match"],
-             data.get("reasoning_trace", "")),
+            (
+                data["result_id"],
+                data["category_id"],
+                data["match"],
+                data.get("reasoning_trace", ""),
+            ),
         )
         if cursor.rowcount > 0:
             stats["imported"] += 1
@@ -59,9 +63,28 @@ def import_record(cursor: sqlite3.Cursor, data: dict, stats: dict) -> int:
     return blockquote_count
 
 
+def _make_progress(label: str) -> Progress:
+    """Create a standard import progress bar."""
+    return Progress(
+        SpinnerColumn(),
+        TextColumn(f"[bold blue]Importing {label}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        console=console,
+    )
+
+
 def run_import(db_path: Path, input_dir: Path) -> dict:
     """Import JSON/JSONL files to SQLite database. Returns stats dict."""
-    stats = {"total": 0, "imported": 0, "skipped": 0, "errors": 0, "blockquotes": 0}
+    stats = {
+        "total": 0,
+        "imported": 0,
+        "skipped": 0,
+        "errors": 0,
+        "blockquotes": 0,
+    }
 
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -69,25 +92,20 @@ def run_import(db_path: Path, input_dir: Path) -> dict:
     # Step 1: Import JSONL if present
     jsonl_path = input_dir / "results.jsonl"
     if jsonl_path.exists():
-        with open(jsonl_path) as f:
+        with jsonl_path.open() as f:
             jsonl_lines = sum(1 for line in f if line.strip())
 
         console.print(f"[dim]Importing {jsonl_lines} records from results.jsonl[/dim]")
-        progress = Progress(
-            SpinnerColumn(), TextColumn("[bold blue]Importing JSONL"),
-            BarColumn(), MofNCompleteColumn(), TaskProgressColumn(),
-            TimeElapsedColumn(), console=console,
-        )
-        with progress:
+        with _make_progress("JSONL") as progress:
             task = progress.add_task("JSONL", total=jsonl_lines)
-            with open(jsonl_path) as f:
+            with jsonl_path.open() as f:
                 for line in f:
-                    line = line.strip()
-                    if not line:
+                    stripped = line.strip()
+                    if not stripped:
                         continue
                     stats["total"] += 1
                     try:
-                        data = json.loads(line)
+                        data = json.loads(stripped)
                         stats["blockquotes"] += import_record(cursor, data, stats)
                     except json.JSONDecodeError:
                         stats["errors"] += 1
@@ -98,12 +116,7 @@ def run_import(db_path: Path, input_dir: Path) -> dict:
     json_files = list(input_dir.glob("r*_c*.json"))
     if json_files:
         console.print(f"[dim]Found {len(json_files)} JSON files to import[/dim]")
-        progress = Progress(
-            SpinnerColumn(), TextColumn("[bold blue]Importing JSON"),
-            BarColumn(), MofNCompleteColumn(), TaskProgressColumn(),
-            TimeElapsedColumn(), console=console,
-        )
-        with progress:
+        with _make_progress("JSON") as progress:
             task = progress.add_task("JSON", total=len(json_files))
             for json_file in json_files:
                 stats["total"] += 1

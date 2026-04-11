@@ -35,24 +35,60 @@ def start_vllm_server(model: str, gpu_params: dict, port: int = 8000) -> None:
         f"VLLM_GPU_MEM={gpu_mem}",
         f"VLLM_MAX_SEQS={max_seqs}",
         f"VLLM_PORT={port}",
-        "VLLM_TEXT_ONLY=1",
     ]
     if max_model_len:
         env_parts.append(f"VLLM_MAX_MODEL_LEN={max_model_len}")
 
-    cmd = " ".join(env_parts) + " bash scripts/start_server.sh"
+    # Log server output so crashes are diagnosable after the session dies
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
+    log_file = log_dir / "vllm-server.log"
+
+    env_str = " ".join(env_parts)
+    cmd = f"{env_str} bash scripts/start_server.sh 2>&1 | tee '{log_file}'"
     subprocess.run(
         ["tmux", "new-session", "-d", "-s", TMUX_SESSION, cmd],
         check=True,
     )
-    console.print(f"[dim]Started vLLM server in tmux session '{TMUX_SESSION}'[/dim]")
+    console.print(
+        f"[dim]Started vLLM server in tmux session '{TMUX_SESSION}'[/dim]"
+    )
+    console.print(f"[dim]  Log: {log_file}[/dim]")
+    console.print(f"[dim]  Monitor with: tmux attach -t {TMUX_SESSION}[/dim]")
+
+
+def _tmux_session_alive() -> bool:
+    """Check if the vLLM tmux session still exists."""
+    result = subprocess.run(
+        ["tmux", "has-session", "-t", TMUX_SESSION],
+        capture_output=True,
+        check=False,
+    )
+    return result.returncode == 0
 
 
 def wait_for_health(port: int = 8000, timeout: int = 3600) -> None:
-    """Poll health endpoint until server is ready."""
+    """Poll health endpoint until server is ready.
+
+    Checks that the tmux session is still alive on each iteration.
+    If the session dies, fails immediately with instructions instead
+    of polling silently for an hour.
+    """
     console.print(f"[bold]Waiting for vLLM server on port {port}...[/bold]")
+    console.print(f"[dim]  Monitor with: tmux attach -t {TMUX_SESSION}[/dim]")
     waited = 0
     while waited < timeout:
+        if not _tmux_session_alive():
+            log_file = Path("logs/vllm-server.log")
+            log_tail = ""
+            if log_file.exists():
+                lines = log_file.read_text().strip().splitlines()
+                log_tail = "\n".join(lines[-20:])
+            raise RuntimeError(
+                f"vLLM server died — tmux session '{TMUX_SESSION}' no longer exists.\n"
+                f"Log file: logs/vllm-server.log\n"
+                + (f"\nLast output:\n{log_tail}\n" if log_tail else "")
+            )
         try:
             req = urllib.request.Request(f"http://localhost:{port}/health")
             with urllib.request.urlopen(req, timeout=5):  # noqa: S310 -- localhost vLLM health check

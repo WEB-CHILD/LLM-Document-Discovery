@@ -43,9 +43,4 @@ if [ -n "${VLLM_MAX_MODEL_LEN:-}" ]; then
     CMD+=(--max-model-len "$VLLM_MAX_MODEL_LEN")
 fi
 
-# Skip multimodal profiling for text-only workloads
-if [ "${VLLM_TEXT_ONLY:-}" = "1" ]; then
-    CMD+=(--limit-mm-per-prompt "image=0,audio=0")
-fi
-
 exec "${CMD[@]}"

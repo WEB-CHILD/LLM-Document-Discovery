@@ -16,39 +16,30 @@ Pipeline for classifying historical web documents (1996-2005 children's web cont
 
 Key modules in `src/llm_discovery/`: fetch.py, prep_db.py, preflight_check.py, unified_processor.py, import_results.py, platform.py, local_runner.py, content_utils.py, cli.py.
 
-## Critical Peer Review Findings (partially fixed)
+## Critical Peer Review Findings
 
-A critical peer review (`denubis-plan-and-execute:critical-peer-review`) was run. Full output is too large to include — re-run if needed. Summary of what's been fixed and what hasn't:
+A critical peer review (`denubis-plan-and-execute:critical-peer-review`) was run. All findings have been addressed.
 
-### Fixed (committed)
+### Fixed (committed in earlier session)
 - `gpt-oss-20b` → `gpt-oss-120b` in 5 Python source files (fabricated truncated model name)
 - `mistralai/gpt-oss-120b` → `openai/gpt-oss-120b` in config/scripts/docs (fabricated vendor prefix)
 
-### Partially fixed (changed but NOT yet committed)
-- UCloud GPU count: `ucloud-setup.md` and `platform.py` manual instructions changed from "4 GPUs" to "2 GPUs" (user has 2x H100, TP=2)
-- `warcio` removal from pyproject.toml — **STOP, SEE BELOW**
+### Fixed (changed, not yet committed — 2026-04-11)
+- UCloud GPU count: `ucloud-setup.md` and `platform.py` changed from "4 GPUs" to "2 GPUs" (user has 2x H100, TP=2)
 - `openai` SDK removed from dependencies (never imported)
 - `datasette` moved to optional `[browse]` extra
+- `dependency-rationale.md` corrected: warcio evidence, pydantic location, requests description all fixed
+- `langchain-text-splitters` and `fabric` entries added to dependency-rationale.md
+- `max_model_len: null` added with comments for H200/H100 in machines.yaml
+- `mistralai/gpt-oss-120b` → `openai/gpt-oss-120b` in phase_04.md and phase_06.md
+- Design plan corrected: 22 categories → 21, 110 rows → 105
+- `google/gemma-4-12b` → `google/gemma-4-E4B-it` in README, cli.py, and phase_08.md
 
-### NOT yet fixed
-- `dependency-rationale.md` has multiple false evidence claims (warcio, pydantic location, requests description)
-- `langchain-text-splitters` missing from dependency-rationale.md
-- No `max_model_len` for H200/H100 in machines.yaml (needs comment or value)
-- `mistralai/gpt-oss-120b` persists in 3 implementation plan phase files (phase_04.md, phase_06.md)
-- Design plan still says "22 categories" (should be 21)
-- `google/gemma-4-12b` appears in README and cli.py — this model ID is fabricated. Should be `google/gemma-4-E4B-it` or `google/gemma-4-E2B-it`
+## fetch.py and WARC decision (RESOLVED)
 
-## BLOCKING DECISION: fetch.py and warcio
+**Decision (2026-04-11):** Keep fetch.py as-is (Wayback `id_` endpoint → HTML → markdown). Keep warcio in dependencies. A `fetch_warc.py` stub has been created for the future WARC-based fetch path (CDX → WARC range request → warcio extraction → markdown). The WARC workflow will be demonstrated in the paper narrative; this pipeline uses the simpler path for now.
 
-**The current `fetch.py` implementation is wrong.** It uses the Wayback Machine `id_` endpoint to download raw HTML directly. The user's intent was WARC-based: download WARC records, extract HTML with warcio, then convert to markdown.
-
-During the original implementation planning session, I (Claude) suggested the `id_` endpoint as "simpler." This got recorded as a design decision. The user has now corrected this — the pipeline should go: **URL → WARC download → warcio extraction → markdownify → markdown file.** The WARC is the source of truth.
-
-**However:** investigation of the Internet Archive's tools shows that downloading individual WARC records for specific Wayback snapshots requires CDX API → WARC range requests (not the `ia` CLI, which is for archive.org item collections, not Wayback Machine). The `id_` endpoint returns identical HTML content without the WARC layer.
-
-**The user needs to decide:** Is the WARC record needed as an archival artifact (provenance, HTTP headers, citing the exact record), or is the HTML content sufficient? If WARC records are needed, fetch.py needs rewriting to use CDX → WARC range requests → warcio. If HTML is sufficient, the current `id_` endpoint approach works but warcio should be removed from dependencies.
-
-**Do not proceed with fetch.py changes or warcio removal until this is resolved with the user.**
+Reference implementation for WARC fetch: https://github.com/helgeho/ArchiveSpark/blob/master/notebooks/Downloading_WARC_from_Wayback.ipynb
 
 ## GPU Configuration (confirmed by user)
 
@@ -75,8 +66,6 @@ During the original implementation planning session, I (Claude) suggested the `i
 
 ## Immediate Next Steps
 
-1. Resolve the WARC vs id_ endpoint decision with the user
-2. Fix or rewrite fetch.py based on that decision
-3. Complete remaining peer review fixes (dependency-rationale, design plan corrections, fabricated model IDs)
-4. Commit all fixes with full ripple verification (grep every corrected string, zero remaining)
-5. Run the testing plan Tier 1 (RTX 4090 + Gemma 4 E4B)
+1. Commit all pending fixes with full ripple verification (grep every corrected string, zero remaining)
+2. Run the testing plan Tier 1 (RTX 4090 + Gemma 4 E4B)
+3. Implement fetch_warc.py when ready to demonstrate WARC workflow for the paper

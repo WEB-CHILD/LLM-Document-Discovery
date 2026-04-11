@@ -4,11 +4,12 @@ Used by prep_db.py and preflight_check.py.
 """
 
 import hashlib
+import os
 from pathlib import Path
 
-# Content validation thresholds
-MIN_CONTENT_LENGTH = 100
-MIN_PRINTABLE_RATIO = 0.85
+# Content validation thresholds (overridable via environment variables)
+MIN_CONTENT_LENGTH = int(os.environ.get("LLM_DISCOVERY_MIN_CONTENT_LENGTH", "100"))
+MIN_PRINTABLE_RATIO = float(os.environ.get("LLM_DISCOVERY_MIN_PRINTABLE_RATIO", "0.85"))
 
 # Binary file magic bytes (at start of content body)
 BINARY_MAGIC: dict[bytes, str] = {

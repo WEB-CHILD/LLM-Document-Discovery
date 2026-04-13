@@ -233,6 +233,14 @@ _GPU_QUEUE_CONFIGS: dict[str, dict[str, str]] = {
         "VLLM_MAX_SEQS": "128",
         "PBS_QUEUE": "gpuvolta",
     },
+    "gpuvolta-oss20b": {
+        "VLLM_MODEL": "openai/gpt-oss-20b",
+        "VLLM_TP": "1",
+        "VLLM_DP": "4",
+        "VLLM_GPU_MEM": "0.90",
+        "VLLM_MAX_SEQS": "128",
+        "PBS_QUEUE": "gpuvolta",
+    },
 }
 
 

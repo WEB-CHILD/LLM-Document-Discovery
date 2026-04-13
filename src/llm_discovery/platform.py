@@ -248,7 +248,10 @@ def generate_hpc_env(gpu_queue: str) -> str:
 
 
 def submit_gadi_job(
-    platform: PlatformConfig, project: str, gpu_queue: str = "gpuhopper"
+    platform: PlatformConfig,
+    project: str,
+    gpu_queue: str = "gpuhopper",
+    container_path: str = "",
 ) -> str:
     """Submit PBS job to Gadi. Returns job ID."""
     template_path = Path("hpc/gadi.pbs.template")
@@ -256,8 +259,10 @@ def submit_gadi_job(
         raise FileNotFoundError(f"PBS template not found: {template_path}")
 
     template = template_path.read_text()
-    pbs_script = template.replace("{{GPU_QUEUE}}", gpu_queue).replace(
-        "{{NCI_PROJECT}}", project
+    pbs_script = (
+        template.replace("{{GPU_QUEUE}}", gpu_queue)
+        .replace("{{NCI_PROJECT}}", project)
+        .replace("{{CONTAINER_PATH}}", container_path)
     )
 
     remote_path = resolve_remote_path(platform, project)

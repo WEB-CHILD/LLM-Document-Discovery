@@ -12,6 +12,7 @@ from llm_discovery.platform import (
     load_platforms,
     resolve_remote_path,
     stage_container_image,
+    submit_gadi_job,
     validate_platform,
 )
 
@@ -252,3 +253,54 @@ class TestGenerateHpcEnv:
     def test_unknown_queue_raises(self):
         with pytest.raises(ValueError, match="Unknown GPU queue"):
             generate_hpc_env("nonexistent")
+
+
+class TestPBSTemplate:
+    def test_pbs_template_contains_singularity_exec(self):
+        template_path = Path(__file__).parent.parent / "hpc" / "gadi.pbs.template"
+        content = template_path.read_text()
+        assert "singularity exec --nv" in content
+        assert "module load singularity" in content
+        assert "bash scripts/process_corpus.sh" not in content
+        assert "module load python3" not in content
+
+    @patch("llm_discovery.platform.Connection")
+    def test_container_path_substituted(self, MockConnection, tmp_path):
+        # Create a temporary PBS template
+        template_path = tmp_path / "hpc" / "gadi.pbs.template"
+        template_path.parent.mkdir(parents=True)
+        real_template = Path(__file__).parent.parent / "hpc" / "gadi.pbs.template"
+        template_path.write_text(real_template.read_text())
+
+        mock_conn = MagicMock()
+        mock_result = MagicMock()
+        mock_result.stdout = "12345.gadi-pbs\n"
+        mock_conn.run.return_value = mock_result
+        MockConnection.return_value = mock_conn
+
+        platform = PlatformConfig(
+            display_name="Test HPC",
+            ssh_host="gadi.nci.org.au",
+            remote_base="/scratch/{project}/llm-discovery",
+            gpu_type="V100",
+            submission="pbs",
+        )
+
+        import os
+
+        old_cwd = Path.cwd()
+        try:
+            os.chdir(tmp_path)
+            result = submit_gadi_job(
+                platform, "ab12", "gpuhopper",
+                container_path="/scratch/ab12/containers/pipeline.sif",
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        assert result == "12345.gadi-pbs"
+        # Check the PBS script uploaded via conn.put()
+        put_call = mock_conn.put.call_args
+        pbs_content = put_call[0][0].read()
+        assert "{{CONTAINER_PATH}}" not in pbs_content
+        assert "/scratch/ab12/containers/pipeline.sif" in pbs_content

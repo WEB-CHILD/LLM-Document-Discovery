@@ -485,7 +485,7 @@ def retrieve_results(platform: PlatformConfig, local_path: Path, project: str) -
         [
             "rsync",
             "-avz",
-            f"{platform.ssh_host}:{remote_path}/corpus.db",
+            f"{platform.ssh_host}:{remote_path}/data/corpus.db",
             str(local_path),
         ],
         check=True,

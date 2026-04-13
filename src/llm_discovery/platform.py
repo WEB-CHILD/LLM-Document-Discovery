@@ -147,6 +147,8 @@ def rsync_to_remote(platform: PlatformConfig, local_dir: Path, project: str) -> 
             "--exclude=input/",
             "--exclude=out/",
             "--exclude=*.log",
+            "--exclude=*.sif",
+            "--exclude=container/",
             str(local_dir) + "/",
             f"{platform.ssh_host}:{remote_path}/",
         ],

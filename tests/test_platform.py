@@ -11,6 +11,7 @@ from llm_discovery.platform import (
     generate_hpc_env,
     load_platforms,
     resolve_remote_path,
+    rsync_to_remote,
     stage_container_image,
     submit_gadi_job,
     validate_platform,
@@ -304,3 +305,20 @@ class TestPBSTemplate:
         pbs_content = put_call[0][0].read()
         assert "{{CONTAINER_PATH}}" not in pbs_content
         assert "/scratch/ab12/containers/pipeline.sif" in pbs_content
+
+
+class TestRsyncToRemote:
+    @patch("llm_discovery.platform.subprocess.run")
+    def test_excludes_sif_and_container(self, mock_subprocess):
+        platform = PlatformConfig(
+            display_name="Test HPC",
+            ssh_host="gadi.nci.org.au",
+            remote_base="/scratch/{project}/llm-discovery",
+            gpu_type="V100",
+            submission="pbs",
+        )
+        rsync_to_remote(platform, Path("/tmp/fake"), "ab12")
+
+        rsync_args = mock_subprocess.call_args[0][0]
+        assert "--exclude=*.sif" in rsync_args
+        assert "--exclude=container/" in rsync_args

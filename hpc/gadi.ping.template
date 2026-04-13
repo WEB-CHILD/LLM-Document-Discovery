@@ -13,8 +13,7 @@
 #PBS -o llm-discovery-ping.out
 #PBS -e llm-discovery-ping.err
 
-module load cuda/12.0
-# Gadi provides Apptainer via the 'singularity' module name
+module load cuda/12.9.0
 module load singularity
 
 REMOTE_BASE="/scratch/{{NCI_PROJECT}}/llm-discovery"
@@ -32,10 +31,9 @@ echo "Container: ${CONTAINER_PATH}"
 # Start vLLM inside container in background
 singularity exec --nv \
     --bind "${DATA_DIR}:/data" \
-    --bind "${HF_CACHE}:/root/.cache/huggingface" \
+    --bind "${HF_CACHE}:/model_cache" --env HF_HOME=/model_cache \
     "${CONTAINER_PATH}" \
-    python -m vllm.entrypoints.openai.api_server \
-        --model "${VLLM_MODEL}" \
+    vllm serve "${VLLM_MODEL}" \
         --tensor-parallel-size "${VLLM_TP}" \
         --gpu-memory-utilization "${VLLM_GPU_MEM}" \
         --port 8000 &

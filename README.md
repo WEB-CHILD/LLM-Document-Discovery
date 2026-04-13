@@ -161,7 +161,13 @@ uv run pytest tests/ -v -m network    # Run network integration tests
 
 ## Citation
 
-See [CITATION.cff](CITATION.cff) for citation information.
+If you use this software, please cite:
+
+> Ballsun-Stanton, B. (2026). *LLM Document Discovery* [Software]. https://github.com/WEB-CHILD/LLM-Document-Discovery
+
+See [CITATION.cff](CITATION.cff) for machine-readable citation metadata.
+
+This pipeline was built for the paper [Exploring the Archived Web through AI-Assisted Document Discovery](https://github.com/WEB-CHILD/exploring-the-archived-web-through-ai-assisted-document-discovery).
 
 ## Licence
 

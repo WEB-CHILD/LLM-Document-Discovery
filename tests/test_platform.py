@@ -292,8 +292,6 @@ class TestPBSTemplate:
             submission="pbs",
         )
 
-        import os
-
         old_cwd = Path.cwd()
         try:
             os.chdir(tmp_path)
@@ -398,8 +396,6 @@ class TestDeploy:
         MockConnection.return_value = mock_conn
         MockConnection.return_value.__enter__ = MagicMock(return_value=mock_conn)
 
-        import os
-
         old_cwd = Path.cwd()
         try:
             os.chdir(tmp_path)
@@ -434,6 +430,42 @@ class TestDeploy:
         assert len(put_calls) >= 1
         env_content = put_calls[0][0][0].read()
         assert "VLLM_MODEL" in env_content
+
+    @patch("llm_discovery.cli._ensure_validated", return_value=True)
+    @patch("llm_discovery.platform.subprocess.run")
+    def test_deploy_gadi_requires_data_dir(
+        self, _mock_run, _mock_validate, tmp_path, monkeypatch
+    ):
+        """AC3.2: deploy without --data-dir for Gadi exits with error."""
+        from typer.testing import CliRunner
+
+        from llm_discovery.cli import app
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "config").mkdir()
+        (tmp_path / "config" / "platforms.yaml").write_text(
+            "platforms:\n"
+            "  gadi:\n"
+            "    display_name: NCI Gadi\n"
+            "    ssh_host: gadi.nci.org.au\n"
+            "    remote_base: /scratch/{project}/llm-discovery\n"
+            "    gpu_type: V100\n"
+            "    submission: pbs\n"
+            "    checks: []\n"
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(
+            app,
+            [
+                "deploy",
+                "--platform", "gadi",
+                "--project", "ab12",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "data-dir" in result.output.lower()
 
 
 class TestGetGpuQueueConfig:

@@ -444,7 +444,6 @@ class TestGetGpuQueueConfig:
 
 class TestUploadModelCache:
     @patch("llm_discovery.platform.subprocess.run")
-    @patch.dict(os.environ, {"HF_HUB_CACHE": ""}, clear=False)
     def test_rsync_with_hf_hub_cache(self, mock_run, tmp_path, monkeypatch):
         """AC2.2: Uses $HF_HUB_CACHE when set."""
         monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))

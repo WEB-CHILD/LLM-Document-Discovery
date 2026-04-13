@@ -228,6 +228,7 @@ _GPU_QUEUE_CONFIGS: dict[str, dict[str, str]] = {
     "gpuvolta-e4b": {
         "VLLM_MODEL": "google/gemma-4-E4B-it",
         "VLLM_TP": "1",
+        "VLLM_DP": "4",
         "VLLM_GPU_MEM": "0.85",
         "VLLM_MAX_SEQS": "128",
         "PBS_QUEUE": "gpuvolta",

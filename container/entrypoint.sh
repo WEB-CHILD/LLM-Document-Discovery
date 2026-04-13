@@ -67,6 +67,10 @@ if [ -n "${VLLM_MAX_MODEL_LEN:-}" ]; then
     CMD+=(--max-model-len "$VLLM_MAX_MODEL_LEN")
 fi
 
+if [ -n "${VLLM_DP:-}" ] && [ "$VLLM_DP" -gt 1 ] 2>/dev/null; then
+    CMD+=(--data-parallel-size "$VLLM_DP")
+fi
+
 # --- 4. Launch vLLM as background process, log to /data/out/ ---
 mkdir -p /data/out
 "${CMD[@]}" > /data/out/vllm.log 2>&1 &

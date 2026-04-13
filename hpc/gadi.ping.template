@@ -28,15 +28,24 @@ echo "=== PING TEST ==="
 echo "Model: ${VLLM_MODEL}"
 echo "Container: ${CONTAINER_PATH}"
 
+# Build vLLM serve command
+VLLM_CMD="vllm serve ${VLLM_MODEL} \
+    --tensor-parallel-size ${VLLM_TP} \
+    --gpu-memory-utilization ${VLLM_GPU_MEM} \
+    --port 8000"
+
+if [ -n "${VLLM_DP:-}" ] && [ "$VLLM_DP" -gt 1 ] 2>/dev/null; then
+    VLLM_CMD="${VLLM_CMD} --data-parallel-size ${VLLM_DP}"
+fi
+
+echo "Command: ${VLLM_CMD}"
+
 # Start vLLM inside container in background
 singularity exec --nv \
     --bind "${DATA_DIR}:/data" \
     --bind "${HF_CACHE}:/model_cache" --env HF_HOME=/model_cache \
     "${CONTAINER_PATH}" \
-    vllm serve "${VLLM_MODEL}" \
-        --tensor-parallel-size "${VLLM_TP}" \
-        --gpu-memory-utilization "${VLLM_GPU_MEM}" \
-        --port 8000 &
+    bash -c "${VLLM_CMD}" &
 
 VLLM_PID=$!
 

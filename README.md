@@ -44,42 +44,44 @@ sqlite3 corpus.db "SELECT model, pairs_processed FROM run_stats"            # ve
 
 ### HPC deployment (Gadi)
 
-#### First-time setup
-
-The first deploy stages `pipeline.sif` to Gadi but the job will fail (no cached
-model weights yet). This is expected — you need the container on Gadi before you
-can download weights using its Python environment.
+#### First-time setup (once per HPC environment)
 
 ```bash
-# 1. Build container locally (Phase 1)
-sudo apptainer build pipeline.sif container/pipeline.def
+# 1. Build container image locally (requires sudo for overlay filesystems)
+sudo llm-discovery build --output pipeline.sif
 
-# 2. Deploy to stage .sif on Gadi (job will fail — expected)
-llm-discovery deploy --platform gadi --project <code> --gpu-queue gpuvolta
+# 2. Validate the built image
+llm-discovery build --validate
 
-# 3. Download model weights on Gadi login node using the staged container
-ssh gadi.nci.org.au
-mkdir -p /scratch/<code>/hf_cache
-export HF_TOKEN="..."
-singularity exec \
-    --bind /scratch/<code>/hf_cache:/root/.cache/huggingface \
-    /scratch/<code>/containers/pipeline.sif \
-    python3 -c "
-from huggingface_hub import snapshot_download
-snapshot_download('google/gemma-4-E4B-it', ignore_patterns=['*.gguf'])
-"
+# 3. Initialise Gadi: stage container, upload model weights, run smoke test
+llm-discovery init --platform gadi --project <project-code> --gpu-queue gpuvolta
 
-# 4. Prepare and upload corpus data
-bash scripts/prepare_container_data.sh data container/hpc_env.gpuvolta.sh
-rsync -avz data/ gadi.nci.org.au:/scratch/<code>/llm-discovery/data/
-
-# 5. Re-deploy (now everything is in place)
-llm-discovery deploy --platform gadi --project <code> --gpu-queue gpuvolta
+# 4. Check the smoke test completed
+llm-discovery status --platform gadi --job-id <job-id> --project <project-code>
 ```
 
-#### Subsequent runs
+The `init` command stages the container to `/scratch/<project-code>/containers/`,
+rsyncs locally-cached model weights to `/scratch/<project-code>/hf_cache/`, and
+submits a ping job that verifies vLLM starts and responds inside the container.
 
-After first-time setup, only steps 4-5 are needed (new data + deploy).
+#### Per-corpus workflow (each time you process a new corpus)
+
+```bash
+# 1. Fetch and prepare corpus
+llm-discovery fetch
+llm-discovery prep-db
+llm-discovery preflight
+
+# 2. Prepare data directory
+bash scripts/prepare_container_data.sh ./data
+
+# 3. Deploy: upload data and submit processing job
+llm-discovery deploy --platform gadi --project <project-code> --gpu-queue gpuvolta --data-dir ./data
+
+# 4. Monitor and retrieve results
+llm-discovery status --platform gadi --job-id <job-id> --project <project-code>
+llm-discovery retrieve --platform gadi --project <project-code>
+```
 
 See [docs/testing-plan-local-4090.md](docs/testing-plan-local-4090.md) for the full tier-by-tier testing plan.
 
@@ -87,13 +89,16 @@ See [docs/testing-plan-local-4090.md](docs/testing-plan-local-4090.md) for the f
 
 | Command          | Description                                              |
 |------------------|----------------------------------------------------------|
+| `build`          | Build Apptainer container image for HPC deployment        |
+| `build --validate` | Verify existing container image (size, CLI callable)    |
+| `init`           | First-time HPC setup: stage container, upload weights, smoke test |
 | `fetch`          | Download pages from Internet Archive, convert to markdown |
 | `prep-db`        | Create and populate corpus database from documents/prompts |
 | `preflight`      | Validate documents in corpus database                     |
 | `process`        | Run LLM classification on document-category pairs         |
 | `import-results` | Import JSON result files into corpus database             |
 | `validate`       | Check remote HPC environment readiness                    |
-| `deploy`         | Sync code to HPC and submit job                          |
+| `deploy`         | Sync code/data to HPC and submit job                     |
 | `status`         | Check status of running HPC job                          |
 | `retrieve`       | Pull results (corpus.db) back from HPC                   |
 | `run`            | Execute the complete pipeline end-to-end                  |
@@ -126,7 +131,7 @@ On HPC nodes, `scripts/process_corpus.sh` orchestrates the on-node pipeline: ins
 To build the pipeline container image:
 
 ```bash
-sudo apptainer build pipeline.sif container/pipeline.def
+sudo llm-discovery build --output pipeline.sif
 ```
 
 **Ubuntu 24.04 prerequisite:** Apptainer requires unprivileged user namespaces. If builds fail, set:

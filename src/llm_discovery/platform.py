@@ -503,6 +503,49 @@ def fetch_remote_file(platform: PlatformConfig, remote_path: str) -> str | None:
     return None
 
 
+def _parse_qstat_attrs(output: str) -> dict[str, str]:
+    """Parse qstat -f output into a dict, handling PBS continuation lines."""
+    attrs: dict[str, str] = {}
+    current_key = ""
+    current_val = ""
+    for raw_line in output.split("\n"):
+        if " = " in raw_line and not raw_line.startswith("\t"):
+            # New key = value pair; save previous
+            if current_key:
+                attrs[current_key] = current_val
+            stripped = raw_line.strip()
+            key, _, value = stripped.partition(" = ")
+            current_key = key.strip()
+            current_val = value.strip()
+        elif raw_line.startswith("\t") and current_key:
+            # Continuation line
+            current_val += raw_line.strip()
+    if current_key:
+        attrs[current_key] = current_val
+    return attrs
+
+
+def get_job_output_paths(
+    platform: PlatformConfig, job_id: str
+) -> tuple[str | None, str | None]:
+    """Get Output_Path and Error_Path for a PBS job. Returns (out, err)."""
+    if platform.ssh_host is None:
+        return None, None
+    with Connection(platform.ssh_host) as conn:
+        result = conn.run(f"qstat -f {job_id}", warn=True, hide=True)
+        if not result.ok:
+            return None, None
+        attrs = _parse_qstat_attrs(result.stdout)
+        out_path = attrs.get("Output_Path")
+        err_path = attrs.get("Error_Path")
+        # Strip host: prefix (format is host:/path/to/file)
+        if out_path and ":" in out_path:
+            out_path = out_path.split(":", maxsplit=1)[-1]
+        if err_path and ":" in err_path:
+            err_path = err_path.split(":", maxsplit=1)[-1]
+        return out_path, err_path
+
+
 def _count_jobs_ahead(conn: Connection, queue: str, job_id: str) -> int:
     """Count jobs queued ahead of job_id in the given PBS queue.
 
@@ -549,13 +592,7 @@ def check_job_status(
         if not result.ok:
             return "completed or not found"
 
-        # Parse key = value lines from qstat -f output
-        attrs: dict[str, str] = {}
-        for raw_line in result.stdout.split("\n"):
-            stripped = raw_line.strip()
-            if " = " in stripped:
-                key, _, value = stripped.partition(" = ")
-                attrs[key.strip()] = value.strip()
+        attrs = _parse_qstat_attrs(result.stdout)
 
         state = attrs.get("job_state", "?")
         status = status_map.get(state, state)

@@ -448,7 +448,12 @@ def status(
     """Check status of running HPC job."""
     import time as _time
 
-    from llm_discovery.platform import check_job_status, load_platforms
+    from llm_discovery.platform import (
+        check_job_status,
+        fetch_remote_file,
+        get_job_output_paths,
+        load_platforms,
+    )
 
     config_path = Path("config/platforms.yaml")
     platforms = load_platforms(config_path)
@@ -475,6 +480,18 @@ def status(
             now = datetime.now().strftime("%H:%M:%S")
             rprint(f"[dim]{now}[/dim] Job {job_id}: [bold]{result}[/bold]")
         rprint("[green]Job complete.[/green]")
+
+        # Fetch and display job output
+        out_path, err_path = get_job_output_paths(platform_config, job_id)
+        if out_path:
+            rprint("\n[bold]--- stdout ---[/bold]")
+            stdout = fetch_remote_file(platform_config, out_path)
+            rprint(stdout or "[dim](empty)[/dim]")
+        if err_path:
+            stderr = fetch_remote_file(platform_config, err_path)
+            if stderr and stderr.strip():
+                rprint("\n[bold red]--- stderr ---[/bold red]")
+                rprint(stderr)
 
 
 @app.command()

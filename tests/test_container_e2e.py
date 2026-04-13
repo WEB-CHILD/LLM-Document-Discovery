@@ -227,13 +227,12 @@ class TestContainerGPU:
         finally:
             conn.close()
 
-    def test_container_exits_cleanly(self, gpu_data_dir):
-        """AC2.3 — container exits 0 and leaves no orphaned vLLM processes."""
-        result = gpu_data_dir["result"]
-        assert result.returncode == 0, (
-            f"Container exited with code {result.returncode}"
-        )
+    def test_container_exits_cleanly(self, gpu_data_dir):  # noqa: ARG002 — fixture dependency
+        """AC2.3 — no orphaned vLLM processes after container exit.
 
+        Exit code 0 is already asserted in test_container_processes_corpus.
+        This test focuses on the orphan-process invariant.
+        """
         # No orphaned vLLM processes should remain
         pgrep = subprocess.run(
             ["pgrep", "-f", "vllm serve"],
@@ -247,14 +246,16 @@ class TestContainerGPU:
         )
 
     def test_container_exit_trap_on_failure(self, sif_path, tmp_path):
-        """AC2.4 — corrupt DB causes non-zero exit with no orphaned processes."""
-        # Prepare a data dir with a corrupt (empty) corpus.db
+        """AC2.4 — corrupt DB causes non-zero exit with no orphaned processes.
+
+        Only hpc_env.sh and the corrupt DB are provided — the entrypoint
+        should fail at the llm-discovery process step (bad DB), not at a
+        missing-file check.
+        """
         data_dir = tmp_path / "corrupt_e2e"
         data_dir.mkdir()
         (data_dir / "corpus.db").write_bytes(b"")
 
-        shutil.copy2(_REPO_ROOT / "system_prompt.txt", data_dir / "system_prompt.txt")
-        shutil.copytree(_REPO_ROOT / "prompts", data_dir / "prompts")
         shutil.copy2(
             _REPO_ROOT / "container" / "hpc_env.rtx4090.sh",
             data_dir / "hpc_env.sh",

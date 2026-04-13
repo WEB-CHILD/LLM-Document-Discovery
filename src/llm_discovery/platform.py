@@ -492,6 +492,25 @@ def retrieve_results(platform: PlatformConfig, local_path: Path, project: str) -
     return local_path
 
 
+def _count_jobs_ahead(conn: Connection, queue: str, job_id: str) -> int:
+    """Count jobs queued ahead of job_id in the given PBS queue."""
+    my_num = int(job_id.split(".", maxsplit=1)[0])
+    result = conn.run(f"qstat {queue}", warn=True, hide=True)
+    if not result.ok:
+        return 0
+    ahead = 0
+    for line in result.stdout.strip().split("\n"):
+        parts = line.split()
+        if len(parts) >= 5 and parts[-2] == "Q":
+            try:
+                other_num = int(parts[0].split(".", maxsplit=1)[0])
+                if other_num < my_num:
+                    ahead += 1
+            except ValueError:
+                continue
+    return ahead
+
+
 def check_job_status(
     platform: PlatformConfig, job_id: str, _project: str | None = None
 ) -> str:
@@ -530,8 +549,9 @@ def check_job_status(
             if walltime:
                 return f"{status} (elapsed {walltime})"
         elif state == "Q":
-            est_start = attrs.get("estimated.start_time")
-            if est_start:
-                return f"{status} (est. start: {est_start})"
+            queue = attrs.get("queue", "")
+            ahead = _count_jobs_ahead(conn, queue, job_id) if queue else 0
+            if ahead > 0:
+                return f"{status} ({ahead} jobs ahead)"
 
         return status

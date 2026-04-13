@@ -1,0 +1,85 @@
+#!/bin/bash
+#PBS -q {{GPU_QUEUE}}
+#PBS -P {{NCI_PROJECT}}
+# NOTE: ngpus=4 matches production TP requirement. Design says "1 GPU" but
+# configured models (gemma-4-31B-it, gpt-oss-120b) require TP=4 to load.
+#PBS -l ngpus=4
+#PBS -l ncpus=48
+#PBS -l mem=380GB
+#PBS -l walltime=00:30:00
+#PBS -l jobfs=50GB
+#PBS -l storage=scratch/{{NCI_PROJECT}}
+#PBS -N llm-discovery-ping
+#PBS -o llm-discovery-ping.out
+#PBS -e llm-discovery-ping.err
+
+module load cuda/12.0
+# Gadi provides Apptainer via the 'singularity' module name
+module load singularity
+
+REMOTE_BASE="/scratch/{{NCI_PROJECT}}/llm-discovery"
+DATA_DIR="${REMOTE_BASE}/data"
+HF_CACHE="/scratch/{{NCI_PROJECT}}/hf_cache"
+CONTAINER_PATH="{{CONTAINER_PATH}}"
+
+# Source GPU config for model name and TP
+source "${DATA_DIR}/hpc_env.sh"
+
+echo "=== PING TEST ==="
+echo "Model: ${VLLM_MODEL}"
+echo "Container: ${CONTAINER_PATH}"
+
+# Start vLLM inside container in background
+singularity exec --nv \
+    --bind "${DATA_DIR}:/data" \
+    --bind "${HF_CACHE}:/root/.cache/huggingface" \
+    "${CONTAINER_PATH}" \
+    python -m vllm.entrypoints.openai.api_server \
+        --model "${VLLM_MODEL}" \
+        --tensor-parallel-size "${VLLM_TP}" \
+        --gpu-memory-utilization "${VLLM_GPU_MEM}" \
+        --port 8000 &
+
+VLLM_PID=$!
+
+# Poll /health until ready (timeout 20 minutes)
+echo "Waiting for vLLM to start..."
+for i in $(seq 1 240); do
+    if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+        echo "vLLM healthy after ~$((i * 5))s"
+        break
+    fi
+    if ! kill -0 $VLLM_PID 2>/dev/null; then
+        echo "FAIL: vLLM process died"
+        exit 1
+    fi
+    sleep 5
+done
+
+# Verify health
+if ! curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+    echo "FAIL: vLLM did not become healthy within 20 minutes"
+    kill $VLLM_PID 2>/dev/null
+    exit 1
+fi
+
+# Send test completion
+echo "Sending test completion..."
+RESPONSE=$(curl -sf http://localhost:8000/v1/completions \
+    -H "Content-Type: application/json" \
+    -d "{\"model\": \"${VLLM_MODEL}\", \"prompt\": \"PING?\", \"max_tokens\": 5, \"temperature\": 0}")
+
+echo "Response: ${RESPONSE}"
+
+if [ -z "${RESPONSE}" ]; then
+    echo "FAIL: Empty response from /v1/completions"
+    kill $VLLM_PID 2>/dev/null
+    exit 1
+fi
+
+echo "PASS: vLLM responded to PING"
+
+# Clean shutdown
+kill $VLLM_PID 2>/dev/null
+wait $VLLM_PID 2>/dev/null
+echo "=== PING TEST COMPLETE ==="

@@ -465,11 +465,15 @@ def status(
     rprint(f"Job {job_id}: [bold]{result}[/bold]")
 
     if watch:
+        from datetime import datetime
+
         terminal_prefixes = ("finished", "completed or not found")
         while not result.startswith(terminal_prefixes):
+            rprint("[dim]  ... waiting 30s ...[/dim]")
             _time.sleep(30)
             result = check_job_status(platform_config, job_id, project)
-            rprint(f"Job {job_id}: [bold]{result}[/bold]")
+            now = datetime.now().strftime("%H:%M:%S")
+            rprint(f"[dim]{now}[/dim] Job {job_id}: [bold]{result}[/bold]")
         rprint("[green]Job complete.[/green]")
 
 

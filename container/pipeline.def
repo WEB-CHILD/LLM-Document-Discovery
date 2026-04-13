@@ -15,6 +15,7 @@ From: vllm/vllm-openai:v0.19.0
     # NOTE: container/entrypoint.sh must exist before building (created in Task 2).
     src /opt/llm-discovery/src
     pyproject.toml /opt/llm-discovery/pyproject.toml
+    README.md /opt/llm-discovery/README.md
     container/entrypoint.sh /opt/llm-discovery/container/entrypoint.sh
 
 %post

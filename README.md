@@ -48,15 +48,13 @@ sqlite3 corpus.db "SELECT model, pairs_processed FROM run_stats"            # ve
 
 ```bash
 # 1. Build container image locally (requires sudo for overlay filesystems)
+#    Validates automatically after build (checks size and CLI callable)
 sudo $(which uv) run llm-discovery build --output pipeline.sif
 
-# 2. Validate the built image
-uv run llm-discovery build --validate
-
-# 3. Initialise Gadi: stage container, upload model weights, run smoke test
+# 2. Initialise Gadi: stage container, upload model weights, run smoke test
 uv run llm-discovery init --platform gadi --project <project-code> --gpu-queue gpuvolta
 
-# 4. Check the smoke test completed
+# 3. Check the smoke test completed
 uv run llm-discovery status --platform gadi --job-id <job-id> --project <project-code>
 ```
 

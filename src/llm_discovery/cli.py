@@ -102,6 +102,65 @@ def build(
 
 
 @app.command()
+def init(
+    platform: str = typer.Option(..., help="HPC platform: gadi"),
+    project: str = typer.Option(..., help="NCI project code"),
+    gpu_queue: str = typer.Option(
+        "gpuvolta", help="Gadi GPU queue: gpuhopper or gpuvolta"
+    ),
+    container_image: Path = typer.Option(
+        "pipeline.sif", help="Path to local .sif container image"
+    ),
+) -> None:
+    """First-time HPC setup: stage container, upload model weights, run smoke test."""
+    from llm_discovery.platform import (
+        load_platforms,
+        stage_container_image,
+        submit_ping_job,
+        upload_hpc_env,
+        upload_model_cache,
+    )
+
+    if not _ensure_validated(platform, project):
+        rprint("[yellow]Validation failed — fix issues before init[/yellow]")
+        raise typer.Exit(1)
+
+    if not container_image.exists():
+        rprint(
+            f"[red]Error: container image not found: {container_image}[/red]\n"
+            "[yellow]Build it first: sudo llm-discovery build[/yellow]"
+        )
+        raise typer.Exit(1)
+
+    config_path = Path("config/platforms.yaml")
+    platforms = load_platforms(config_path)
+    platform_config = platforms.platforms[platform]
+
+    # Stage container image
+    rprint(f"[bold]Staging container image {container_image}...[/bold]")
+    container_path = stage_container_image(
+        platform_config, project, container_image
+    )
+
+    # Generate and upload hpc_env.sh
+    rprint(f"[bold]Uploading GPU configuration for {gpu_queue}...[/bold]")
+    upload_hpc_env(platform_config, project, gpu_queue)
+
+    # Upload model weights
+    rprint("[bold]Uploading model weights from local HF cache...[/bold]")
+    upload_model_cache(platform_config, project, gpu_queue)
+
+    # Submit ping job
+    rprint("[bold]Submitting smoke test job...[/bold]")
+    job_id = submit_ping_job(platform_config, project, gpu_queue, container_path)
+    rprint(f"[green]Ping job submitted: {job_id}[/green]")
+    rprint(
+        f"[dim]Check result: llm-discovery status"
+        f" --platform {platform} --job-id {job_id}[/dim]"
+    )
+
+
+@app.command()
 def fetch(
     urls: list[str] = typer.Argument(
         None, help="Internet Archive URLs to fetch (defaults to 5 demo URLs)"

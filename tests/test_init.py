@@ -24,11 +24,30 @@ class TestInitCommand:
         monkeypatch.chdir(tmp_path)
         sif = tmp_path / "pipeline.sif"
         sif.write_bytes(b"fake")
+        # Create config file so existence check passes (load_platforms is mocked)
+        (tmp_path / "config").mkdir()
+        (tmp_path / "config" / "platforms.yaml").write_text("")
 
         mock_config = MagicMock()
         mock_platforms.return_value.platforms = {"gadi": mock_config}
         mock_stage.return_value = "/scratch/ab12/containers/pipeline.sif"
         mock_ping.return_value = "12345.gadi-pbs"
+
+        # Track call order via a shared list
+        call_order = []
+
+        def _track(name, rv=None):
+            def _side_effect(*_a, **_k):
+                call_order.append(name)
+                return rv
+            return _side_effect
+
+        mock_stage.side_effect = _track(
+            "stage", "/scratch/ab12/containers/pipeline.sif"
+        )
+        mock_env.side_effect = _track("env")
+        mock_model.side_effect = _track("model")
+        mock_ping.side_effect = _track("ping", "12345.gadi-pbs")
 
         result = runner.invoke(app, [
             "init", "--platform", "gadi", "--project", "ab12",
@@ -37,7 +56,7 @@ class TestInitCommand:
 
         assert result.exit_code == 0, f"Output:\n{result.output}"
 
-        # Verify all four platform functions were called
+        # Verify all four platform functions were called with correct args
         mock_stage.assert_called_once_with(mock_config, "ab12", sif)
         mock_env.assert_called_once_with(mock_config, "ab12", "gpuvolta")
         mock_model.assert_called_once_with(mock_config, "ab12", "gpuvolta")
@@ -45,8 +64,9 @@ class TestInitCommand:
             mock_config, "ab12", "gpuvolta", "/scratch/ab12/containers/pipeline.sif"
         )
 
-        # Verify order: stage before env before model before ping
-        assert mock_stage.call_count == 1
+        # Verify call order: stage -> env -> model -> ping
+        assert call_order == ["stage", "env", "model", "ping"]
+
         assert "12345.gadi-pbs" in result.output
 
     @patch("llm_discovery.cli._ensure_validated", return_value=True)

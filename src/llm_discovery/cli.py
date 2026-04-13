@@ -133,7 +133,20 @@ def init(
         raise typer.Exit(1)
 
     config_path = Path("config/platforms.yaml")
+    if not config_path.exists():
+        rprint(
+            f"[red]Error: platform config not found: {config_path}[/red]\n"
+            "[yellow]Run from the project root directory.[/yellow]"
+        )
+        raise typer.Exit(1)
     platforms = load_platforms(config_path)
+    if platform not in platforms.platforms:
+        available = ", ".join(platforms.platforms)
+        rprint(
+            f"[red]Error: unknown platform '{platform}'."
+            f" Available: {available}[/red]"
+        )
+        raise typer.Exit(1)
     platform_config = platforms.platforms[platform]
 
     # Stage container image

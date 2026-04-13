@@ -3,8 +3,11 @@
 # Source: validated during melica spike with google/gemma-4-E4B-it
 #
 # Sourced by container/entrypoint.sh at container startup.
-# Bind-mount the directory containing this file to /data/ when running:
-#   apptainer exec --nv --bind ./data:/data pipeline.sif /opt/llm-discovery/container/entrypoint.sh
+# Example invocation:
+#   apptainer exec --nv \
+#       --bind ./data:/data \
+#       --bind ~/.cache/huggingface:/model_cache --env HF_HOME=/model_cache \
+#       pipeline.sif /opt/llm-discovery/container/entrypoint.sh
 
 export VLLM_MODEL="google/gemma-4-E4B-it"
 export VLLM_TP=1

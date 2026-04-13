@@ -8,12 +8,16 @@
 #   - Only GPU stages (process + import-results), not prep-db/preflight
 #   - Hardcoded /data/ paths from bind mounts
 #
-# Expects /data/ to be bind-mounted with:
-#   hpc_env.sh        — runtime config (VLLM_MODEL, VLLM_TP, VLLM_GPU_MEM, VLLM_MAX_SEQS)
-#   corpus.db         — pre-built by prep-db on the host
-#   system_prompt.txt — LLM extraction instructions (loaded by process command from cwd)
-#   prompts/          — YAML category definitions (loaded relative to corpus.db parent)
-#   out/              — created by this script for JSON results and vLLM logs
+# Bind mounts:
+#   --bind <data-dir>:/data        — must contain:
+#     hpc_env.sh        — runtime config (VLLM_MODEL, VLLM_TP, VLLM_GPU_MEM, VLLM_MAX_SEQS)
+#     corpus.db         — pre-built by prep-db on the host
+#     system_prompt.txt — LLM extraction instructions (loaded by process command from cwd)
+#     prompts/          — YAML category definitions (loaded relative to corpus.db parent)
+#     out/              — created by this script for JSON results and vLLM logs
+#   --bind ~/.cache/huggingface:/model_cache --env HF_HOME=/model_cache
+#     HF model weights. Do NOT bind to /root/.cache/huggingface — Apptainer
+#     runs as the calling user, not root, so $HOME differs from the Docker base.
 #
 # Required env vars (set in hpc_env.sh): VLLM_MODEL, VLLM_TP, VLLM_GPU_MEM, VLLM_MAX_SEQS
 # Optional: VLLM_PORT (default: 8000), VLLM_MAX_MODEL_LEN

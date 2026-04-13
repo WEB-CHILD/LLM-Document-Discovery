@@ -341,6 +341,9 @@ def deploy(
     container_image: str = typer.Option(
         "pipeline.sif", help="Path to local .sif container image"
     ),
+    data_dir: Path = typer.Option(
+        None, help="Local data directory (corpus.db, system_prompt.txt, prompts/)"
+    ),
 ) -> None:
     """Sync code to HPC and submit job."""
     from llm_discovery.platform import (
@@ -349,6 +352,7 @@ def deploy(
         stage_container_image,
         submit_gadi_job,
         submit_ucloud_job,
+        upload_data_dir,
         upload_hpc_env,
     )
 
@@ -371,6 +375,10 @@ def deploy(
             rprint("[red]Error: --project is required for Gadi deployment[/red]")
             raise typer.Exit(1)
 
+        if not data_dir:
+            rprint("[red]Error: --data-dir is required for Gadi deployment[/red]")
+            raise typer.Exit(1)
+
         # Stage container image
         rprint(f"[bold]Staging container image {container_image}...[/bold]")
         container_path = stage_container_image(
@@ -380,6 +388,9 @@ def deploy(
         # Generate and upload hpc_env.sh
         rprint(f"[bold]Uploading GPU configuration for {gpu_queue}...[/bold]")
         upload_hpc_env(platform_config, project, gpu_queue)
+
+        rprint(f"[bold]Uploading data from {data_dir}...[/bold]")
+        upload_data_dir(platform_config, project, Path(data_dir))
 
         rprint(f"[bold]Submitting PBS job to {gpu_queue} queue...[/bold]")
         job_id = submit_gadi_job(platform_config, project, gpu_queue, container_path)

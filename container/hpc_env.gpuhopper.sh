@@ -4,6 +4,7 @@
 # Sourced by container/entrypoint.sh at container startup.
 # Model and TP values sized for 4x H200 141GB GPUs.
 
+# TODO: verify model name before using on Gadi gpuhopper — this is a placeholder
 export VLLM_MODEL="openai/gpt-oss-120b"
 export VLLM_TP=4
 export VLLM_GPU_MEM=0.92

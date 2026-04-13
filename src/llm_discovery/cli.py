@@ -92,7 +92,7 @@ def build(
         rprint(
             f"[red]Build failed (exit {exc.returncode}).[/red]\n"
             "[yellow]If permission denied, re-run with sudo:\n\n"
-            f"  sudo llm-discovery build --output {output}[/yellow]\n"
+            f"  sudo $(which uv) run llm-discovery build --output {output}[/yellow]\n"
         )
         raise typer.Exit(1) from exc
 
@@ -128,7 +128,7 @@ def init(
     if not container_image.exists():
         rprint(
             f"[red]Error: container image not found: {container_image}[/red]\n"
-            "[yellow]Build it first: sudo llm-discovery build[/yellow]"
+            "[yellow]Build it first: sudo $(which uv) run llm-discovery build[/yellow]"
         )
         raise typer.Exit(1)
 
@@ -168,8 +168,8 @@ def init(
     job_id = submit_ping_job(platform_config, project, gpu_queue, container_path)
     rprint(f"[green]Ping job submitted: {job_id}[/green]")
     rprint(
-        f"[dim]Check result: llm-discovery status"
-        f" --platform {platform} --job-id {job_id}[/dim]"
+        f"[dim]Check result: uv run llm-discovery status"
+        f" --platform {platform} --job-id {job_id} --watch[/dim]"
     )
 
 
@@ -396,8 +396,8 @@ def deploy(
         job_id = submit_gadi_job(platform_config, project, gpu_queue, container_path)
         rprint(f"[green]Job submitted: {job_id}[/green]")
         rprint(
-            f"[dim]Check status: llm-discovery status"
-            f" --platform gadi --job-id {job_id}[/dim]"
+            f"[dim]Check status: uv run llm-discovery status"
+            f" --platform gadi --job-id {job_id} --watch[/dim]"
         )
     elif platform == "ucloud":
         submit_ucloud_job(platform_config)
@@ -411,8 +411,13 @@ def status(
     platform: str = typer.Option(..., help="HPC platform: gadi or ucloud"),
     job_id: str = typer.Option(None, help="Job ID to check"),
     project: str = typer.Option(None, help="NCI project code"),
+    watch: bool = typer.Option(
+        False, "--watch", "-w", help="Poll every 30s until job completes"
+    ),
 ) -> None:
     """Check status of running HPC job."""
+    import time as _time
+
     from llm_discovery.platform import check_job_status, load_platforms
 
     config_path = Path("config/platforms.yaml")
@@ -428,6 +433,14 @@ def status(
 
     result = check_job_status(platform_config, job_id, project)
     rprint(f"Job {job_id}: [bold]{result}[/bold]")
+
+    if watch:
+        terminal_prefixes = ("finished", "completed or not found")
+        while not result.startswith(terminal_prefixes):
+            _time.sleep(30)
+            result = check_job_status(platform_config, job_id, project)
+            rprint(f"Job {job_id}: [bold]{result}[/bold]")
+        rprint("[green]Job complete.[/green]")
 
 
 @app.command()
@@ -566,10 +579,10 @@ def _run_remote_pipeline(
         while True:
             status_str = check_job_status(platform_config, job_id, project)
             rprint(f"  Job {job_id}: {status_str}")
-            if status_str in (
+            if status_str.startswith((
                 "finished",
                 "completed or not found",
-            ):
+            )):
                 break
             _time.sleep(60)
 

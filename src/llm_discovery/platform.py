@@ -495,24 +495,43 @@ def retrieve_results(platform: PlatformConfig, local_path: Path, project: str) -
 def check_job_status(
     platform: PlatformConfig, job_id: str, _project: str | None = None
 ) -> str:
-    """Check job status on HPC. Returns status string."""
+    """Check job status on HPC. Returns status string with details."""
     if platform.ssh_host is None:
         return "unknown (no SSH)"
-    conn = Connection(platform.ssh_host)
-    result = conn.run(f"qstat {job_id}", warn=True, hide=True)
-    if not result.ok:
-        return "completed or not found"
-    # Parse qstat output for status column
-    for line in result.stdout.strip().split("\n"):
-        if job_id.split(".", maxsplit=1)[0] in line:
-            parts = line.split()
-            if len(parts) >= 5:
-                status_code = parts[-2]
-                status_map = {
-                    "Q": "queued",
-                    "R": "running",
-                    "F": "finished",
-                    "E": "exiting",
-                }
-                return status_map.get(status_code, status_code)
-    return "unknown"
+
+    status_map = {
+        "Q": "queued",
+        "R": "running",
+        "H": "held",
+        "F": "finished",
+        "E": "exiting",
+        "S": "suspended",
+    }
+
+    with Connection(platform.ssh_host) as conn:
+        # Try qstat -f for detailed info
+        result = conn.run(f"qstat -f {job_id}", warn=True, hide=True)
+        if not result.ok:
+            return "completed or not found"
+
+        # Parse key = value lines from qstat -f output
+        attrs: dict[str, str] = {}
+        for raw_line in result.stdout.split("\n"):
+            stripped = raw_line.strip()
+            if " = " in stripped:
+                key, _, value = stripped.partition(" = ")
+                attrs[key.strip()] = value.strip()
+
+        state = attrs.get("job_state", "?")
+        status = status_map.get(state, state)
+
+        if state == "R":
+            walltime = attrs.get("resources_used.walltime")
+            if walltime:
+                return f"{status} (elapsed {walltime})"
+        elif state == "Q":
+            est_start = attrs.get("estimated.start_time")
+            if est_start:
+                return f"{status} (est. start: {est_start})"
+
+        return status

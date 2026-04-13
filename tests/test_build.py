@@ -11,8 +11,8 @@ runner = CliRunner()
 
 
 class TestBuildCommand:
-    @patch("subprocess.run")
-    @patch("shutil.which", return_value="/usr/bin/apptainer")
+    @patch("llm_discovery.cli.subprocess.run")
+    @patch("llm_discovery.cli.shutil.which", return_value="/usr/bin/apptainer")
     def test_build_success(self, _mock_which, mock_run, tmp_path, monkeypatch):
         """AC1.1: Successful build calls apptainer build and then validates."""
         monkeypatch.chdir(tmp_path)
@@ -45,7 +45,7 @@ class TestBuildCommand:
         assert exec_call[0][0][:2] == ["apptainer", "exec"]
         assert "llm-discovery" in exec_call[0][0]
 
-    @patch("shutil.which", return_value=None)
+    @patch("llm_discovery.cli.shutil.which", return_value=None)
     def test_apptainer_not_found(self, _mock_which, tmp_path, monkeypatch):
         """AC1.2: Missing apptainer exits with installation guidance."""
         monkeypatch.chdir(tmp_path)
@@ -54,8 +54,8 @@ class TestBuildCommand:
         assert result.exit_code == 1
         assert "apptainer.org" in result.output.lower()
 
-    @patch("subprocess.run")
-    @patch("shutil.which", return_value="/usr/bin/apptainer")
+    @patch("llm_discovery.cli.subprocess.run")
+    @patch("llm_discovery.cli.shutil.which", return_value="/usr/bin/apptainer")
     def test_build_failure_shows_sudo_hint(
         self, _mock_which, mock_run, tmp_path, monkeypatch
     ):
@@ -74,7 +74,7 @@ class TestBuildCommand:
 
 
 class TestBuildValidate:
-    @patch("subprocess.run")
+    @patch("llm_discovery.cli.subprocess.run")
     def test_validate_success(self, mock_run, tmp_path, monkeypatch):
         """AC1.3: Validate-only with valid .sif succeeds."""
         monkeypatch.chdir(tmp_path)
@@ -113,7 +113,7 @@ class TestBuildValidate:
         assert result.exit_code == 1
         assert "gb" in result.output.lower()
 
-    @patch("subprocess.run")
+    @patch("llm_discovery.cli.subprocess.run")
     def test_validate_cli_not_callable(self, mock_run, tmp_path, monkeypatch):
         """AC1.4: Validate with .sif where CLI fails exits with error."""
         monkeypatch.chdir(tmp_path)

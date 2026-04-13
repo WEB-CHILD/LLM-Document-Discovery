@@ -1,5 +1,7 @@
 """Typer CLI for LLM Document Discovery pipeline."""
 
+import shutil
+import subprocess
 from pathlib import Path
 
 import typer
@@ -27,8 +29,6 @@ def build(
     ),
 ) -> None:
     """Build the Apptainer container image for HPC deployment."""
-    import shutil
-    import subprocess
 
     def _validate_sif(sif_path: Path) -> bool:
         """Validate a .sif image: exists, >1GB, CLI callable inside."""

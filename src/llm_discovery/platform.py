@@ -360,6 +360,34 @@ def upload_model_cache(
     )
 
 
+def download_model_on_remote(
+    platform: PlatformConfig,
+    project: str,
+    gpu_queue: str,
+    container_path: str,
+) -> None:
+    """Download model weights directly on remote HPC using the staged container.
+
+    Runs huggingface-cli download inside the container on a login node.
+    Requires HF_TOKEN to be set on the remote (checked by validate).
+    """
+    model_name = get_gpu_queue_config(gpu_queue)["VLLM_MODEL"]
+    hf_cache = f"/scratch/{project}/hf_cache"
+
+    with Connection(platform.ssh_host) as conn:
+        conn.run(f"mkdir -p {hf_cache}", hide=True)
+        # Run download inside the container so we get the right Python/HF version
+        cmd = (
+            f"module load singularity && "
+            f"singularity exec "
+            f"--bind {hf_cache}:/model_cache --env HF_HOME=/model_cache "
+            f"{container_path} "
+            f"huggingface-cli download {model_name}"
+        )
+        console.print(f"[dim]Running: {cmd}[/dim]")
+        conn.run(cmd)
+
+
 def upload_data_dir(
     platform: PlatformConfig,
     project: str,

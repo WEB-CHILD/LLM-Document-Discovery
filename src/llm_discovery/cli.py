@@ -18,6 +18,90 @@ app = typer.Typer(
 
 
 @app.command()
+def build(
+    output: Path = typer.Option(
+        "pipeline.sif", help="Output path for the .sif container image"
+    ),
+    validate_only: bool = typer.Option(
+        False, "--validate", help="Validate existing .sif without building"
+    ),
+) -> None:
+    """Build the Apptainer container image for HPC deployment."""
+    import shutil
+    import subprocess
+
+    def _validate_sif(sif_path: Path) -> bool:
+        """Validate a .sif image: exists, >1GB, CLI callable inside."""
+        if not sif_path.exists():
+            rprint(f"[red]Error: {sif_path} does not exist[/red]")
+            return False
+
+        size_gb = sif_path.stat().st_size / (1024**3)
+        if size_gb < 1.0:
+            rprint(
+                f"[red]Error: {sif_path} is {size_gb:.2f}GB — "
+                f"expected >1GB for a valid pipeline image[/red]"
+            )
+            return False
+
+        rprint("[dim]Checking CLI inside container...[/dim]")
+        result = subprocess.run(
+            ["apptainer", "exec", str(sif_path), "llm-discovery", "--help"],
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            rprint(
+                f"[red]Error: llm-discovery CLI not callable inside "
+                f"container (exit {result.returncode})[/red]"
+            )
+            return False
+
+        rprint(f"[green]Validated: {sif_path} ({size_gb:.1f}GB, CLI OK)[/green]")
+        return True
+
+    if validate_only:
+        if not _validate_sif(output):
+            raise typer.Exit(1)
+        return
+
+    if not shutil.which("apptainer"):
+        rprint(
+            "[red]Error: apptainer not found on PATH.[/red]\n"
+            "[yellow]Install Apptainer: "
+            "https://apptainer.org/docs/admin/main/installation.html[/yellow]"
+        )
+        raise typer.Exit(1)
+
+    def_path = Path("container/pipeline.def")
+    if not def_path.exists():
+        rprint(f"[red]Error: {def_path} not found[/red]")
+        raise typer.Exit(1)
+
+    rprint(
+        f"[bold]Building container from {def_path}...[/bold]\n"
+        "[dim]Note: apptainer build typically requires root (sudo) "
+        "to create overlay filesystems.[/dim]"
+    )
+    try:
+        subprocess.run(
+            ["apptainer", "build", str(output), str(def_path)],
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        rprint(
+            f"[red]Build failed (exit {exc.returncode}).[/red]\n"
+            "[yellow]If permission denied, re-run with sudo:\n\n"
+            f"  sudo llm-discovery build --output {output}[/yellow]\n"
+        )
+        raise typer.Exit(1) from exc
+
+    rprint("[bold]Validating built image...[/bold]")
+    if not _validate_sif(output):
+        raise typer.Exit(1)
+
+
+@app.command()
 def fetch(
     urls: list[str] = typer.Argument(
         None, help="Internet Archive URLs to fetch (defaults to 5 demo URLs)"

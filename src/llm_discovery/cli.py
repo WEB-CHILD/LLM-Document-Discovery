@@ -453,6 +453,7 @@ def status(
         fetch_remote_file,
         get_job_output_paths,
         load_platforms,
+        resolve_remote_path,
     )
 
     config_path = Path("config/platforms.yaml")
@@ -487,11 +488,18 @@ def status(
             rprint("\n[bold]--- stdout ---[/bold]")
             stdout = fetch_remote_file(platform_config, out_path)
             rprint(stdout or "[dim](empty)[/dim]")
-        if err_path:
-            stderr = fetch_remote_file(platform_config, err_path)
-            if stderr and stderr.strip():
-                rprint("\n[bold red]--- stderr ---[/bold red]")
-                rprint(stderr)
+            if err_path:
+                stderr = fetch_remote_file(platform_config, err_path)
+                if stderr and stderr.strip():
+                    rprint("\n[bold red]--- stderr ---[/bold red]")
+                    rprint(stderr)
+        elif project and platform_config.ssh_host:
+            remote_base = resolve_remote_path(platform_config, project)
+            rprint(
+                f"\n[dim]Job info expired from PBS. Check output on remote:\n"
+                f"  ssh {platform_config.ssh_host}"
+                f" ls -t {remote_base}/*.out {remote_base}/*.err[/dim]"
+            )
 
 
 @app.command()

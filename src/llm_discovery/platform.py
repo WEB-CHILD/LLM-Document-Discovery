@@ -492,6 +492,17 @@ def retrieve_results(platform: PlatformConfig, local_path: Path, project: str) -
     return local_path
 
 
+def fetch_remote_file(platform: PlatformConfig, remote_path: str) -> str | None:
+    """Fetch a text file from the remote HPC. Returns content or None."""
+    if platform.ssh_host is None:
+        return None
+    with Connection(platform.ssh_host) as conn:
+        result = conn.run(f"cat {remote_path}", warn=True, hide=True)
+        if result.ok:
+            return result.stdout
+    return None
+
+
 def _count_jobs_ahead(conn: Connection, queue: str, job_id: str) -> int:
     """Count jobs queued ahead of job_id in the given PBS queue."""
     my_num = int(job_id.split(".", maxsplit=1)[0])

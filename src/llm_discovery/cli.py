@@ -163,14 +163,44 @@ def init(
     rprint("[bold]Uploading model weights from local HF cache...[/bold]")
     upload_model_cache(platform_config, project, gpu_queue)
 
-    # Submit ping job
+    # Submit ping job and wait for result
     rprint("[bold]Submitting smoke test job...[/bold]")
     job_id = submit_ping_job(platform_config, project, gpu_queue, container_path)
     rprint(f"[green]Ping job submitted: {job_id}[/green]")
-    rprint(
-        f"[dim]Check result: uv run llm-discovery status"
-        f" --platform {platform} --job-id {job_id} --watch[/dim]"
+    rprint("[dim]Waiting for ping job to complete (polling every 30s)...[/dim]")
+
+    import time as _time
+
+    from llm_discovery.platform import check_job_status, fetch_remote_file
+
+    terminal_prefixes = ("finished", "completed or not found")
+    while True:
+        result = check_job_status(platform_config, job_id, project)
+        rprint(f"  Job {job_id}: [bold]{result}[/bold]")
+        if result.startswith(terminal_prefixes):
+            break
+        _time.sleep(30)
+
+    # Fetch and display ping output and errors
+    remote_base = f"/scratch/{project}/llm-discovery"
+    rprint("\n[bold]--- Ping stdout ---[/bold]")
+    stdout = fetch_remote_file(
+        platform_config, f"{remote_base}/llm-discovery-ping.out"
     )
+    rprint(stdout or "[dim](empty)[/dim]")
+
+    stderr = fetch_remote_file(
+        platform_config, f"{remote_base}/llm-discovery-ping.err"
+    )
+    if stderr and stderr.strip():
+        rprint("\n[bold red]--- Ping stderr ---[/bold red]")
+        rprint(stderr)
+
+    if "PASS:" in (stdout or ""):
+        rprint("\n[green bold]Smoke test passed.[/green bold]")
+    else:
+        rprint("\n[red bold]Smoke test failed.[/red bold]")
+        raise typer.Exit(1)
 
 
 @app.command()

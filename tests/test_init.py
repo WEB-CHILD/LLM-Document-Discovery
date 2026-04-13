@@ -16,9 +16,14 @@ class TestInitCommand:
     @patch("llm_discovery.platform.upload_hpc_env")
     @patch("llm_discovery.platform.upload_model_cache")
     @patch("llm_discovery.platform.submit_ping_job")
+    @patch("llm_discovery.platform.check_job_status", return_value="finished")
+    @patch(
+        "llm_discovery.platform.fetch_remote_file",
+        return_value="PASS: vLLM responded to PING",
+    )
     def test_init_success(
-        self, mock_ping, mock_model, mock_env, mock_stage,
-        mock_platforms, _mock_validate, tmp_path, monkeypatch
+        self, _mock_fetch, _mock_status, mock_ping, mock_model, mock_env,
+        mock_stage, mock_platforms, _mock_validate, tmp_path, monkeypatch
     ):
         """AC2.1: init stages .sif and calls all platform functions in order."""
         monkeypatch.chdir(tmp_path)

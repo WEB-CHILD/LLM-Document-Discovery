@@ -504,9 +504,14 @@ def fetch_remote_file(platform: PlatformConfig, remote_path: str) -> str | None:
 
 
 def _count_jobs_ahead(conn: Connection, queue: str, job_id: str) -> int:
-    """Count jobs queued ahead of job_id in the given PBS queue."""
+    """Count jobs queued ahead of job_id in the given PBS queue.
+
+    PBS execution queues (e.g. gpuvolta-exec) are stripped to the routing
+    queue (gpuvolta) since that's where queued jobs are listed.
+    """
+    routing_queue = queue.removesuffix("-exec")
     my_num = int(job_id.split(".", maxsplit=1)[0])
-    result = conn.run(f"qstat {queue}", warn=True, hide=True)
+    result = conn.run(f"qstat {routing_queue}", warn=True, hide=True)
     if not result.ok:
         return 0
     ahead = 0

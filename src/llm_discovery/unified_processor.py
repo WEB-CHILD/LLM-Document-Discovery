@@ -199,12 +199,8 @@ def build_request_body(
 
 # Response Format
 
-First, provide your reasoning and analysis.
-Then, provide ONLY valid JSON with this structure:
-{{
-  "match": "yes" or "maybe" or "no",
-  "blockquotes": ["quote 1", "quote 2"]
-}}""",
+Explain your reasoning in 1-2 sentences. Then respond with JSON. Do not use a fenced codeblock.
+{{"match": "yes" or "maybe" or "no", "blockquotes": ["verbatim quote 1", "verbatim quote 2"]}}""",
         },
     ]
     return custom_id, {

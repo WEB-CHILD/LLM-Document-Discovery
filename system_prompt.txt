@@ -4,6 +4,8 @@ You make no interpretive judgments about intent or audience. You only identify a
 
 When you find matching text, output it exactly as it appears in the source, preserving original spelling, capitalisation, and errors. Maximum blockquote length: one paragraph.
 
+Explain your judgement rationale in 1-2 sentences before you output JSON. Do not use a fenced codeblock.
+
 You must respond with JSON containing:
 - "match": one of "yes", "maybe", or "no"
   - "yes": clear matches of the specified pattern exist

@@ -44,9 +44,42 @@ sqlite3 corpus.db "SELECT model, pairs_processed FROM run_stats"            # ve
 
 ### HPC deployment (Gadi)
 
+#### First-time setup
+
+The first deploy stages `pipeline.sif` to Gadi but the job will fail (no cached
+model weights yet). This is expected — you need the container on Gadi before you
+can download weights using its Python environment.
+
 ```bash
-uv run llm-discovery run --platform gadi --project <code> --yes
+# 1. Build container locally (Phase 1)
+sudo apptainer build pipeline.sif container/pipeline.def
+
+# 2. Deploy to stage .sif on Gadi (job will fail — expected)
+llm-discovery deploy --platform gadi --project <code> --gpu-queue gpuvolta
+
+# 3. Download model weights on Gadi login node using the staged container
+ssh gadi.nci.org.au
+mkdir -p /scratch/<code>/hf_cache
+export HF_TOKEN="..."
+singularity exec \
+    --bind /scratch/<code>/hf_cache:/root/.cache/huggingface \
+    /scratch/<code>/containers/pipeline.sif \
+    python3 -c "
+from huggingface_hub import snapshot_download
+snapshot_download('google/gemma-4-E4B-it', ignore_patterns=['*.gguf'])
+"
+
+# 4. Prepare and upload corpus data
+bash scripts/prepare_container_data.sh data container/hpc_env.gpuvolta.sh
+rsync -avz data/ gadi.nci.org.au:/scratch/<code>/llm-discovery/data/
+
+# 5. Re-deploy (now everything is in place)
+llm-discovery deploy --platform gadi --project <code> --gpu-queue gpuvolta
 ```
+
+#### Subsequent runs
+
+After first-time setup, only steps 4-5 are needed (new data + deploy).
 
 See [docs/testing-plan-local-4090.md](docs/testing-plan-local-4090.md) for the full tier-by-tier testing plan.
 

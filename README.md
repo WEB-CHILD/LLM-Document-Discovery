@@ -88,6 +88,33 @@ On HPC nodes, `scripts/process_corpus.sh` orchestrates the on-node pipeline: ins
 - [NCI Gadi setup](docs/gadi-setup.md) -- SSH keys, project allocation, module loading
 - [DeiC UCloud setup](docs/ucloud-setup.md) -- Account, container configuration
 
+## Container Build (Apptainer)
+
+To build the pipeline container image:
+
+```bash
+sudo apptainer build pipeline.sif container/pipeline.def
+```
+
+**Ubuntu 24.04 prerequisite:** Apptainer requires unprivileged user namespaces. If builds fail, set:
+
+```bash
+sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+# Persist across reboots:
+echo "kernel.apparmor_restrict_unprivileged_userns=0" | sudo tee /etc/sysctl.d/99-apptainer.conf
+```
+
+Run the container with GPU access:
+
+```bash
+apptainer exec --nv \
+    --bind ./data:/data \
+    --bind ~/.cache/huggingface:/model_cache --env HF_HOME=/model_cache \
+    pipeline.sif /opt/llm-discovery/container/entrypoint.sh
+```
+
+See `container/hpc_env.rtx4090.sh` for local GPU configuration and `container/entrypoint.sh` header for bind mount requirements.
+
 ## Development
 
 ```bash

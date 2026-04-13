@@ -340,6 +340,47 @@ def upload_model_cache(
     )
 
 
+def upload_data_dir(
+    platform: PlatformConfig,
+    project: str,
+    data_dir: Path,
+) -> None:
+    """Rsync local data directory to remote HPC.
+
+    Validates corpus.db, system_prompt.txt, and prompts/ exist.
+    Excludes hpc_env.sh (managed by upload_hpc_env).
+    Raises FileNotFoundError if required files are missing.
+    """
+    required_files = ["corpus.db", "system_prompt.txt"]
+    required_dirs = ["prompts"]
+    missing = []
+
+    for f in required_files:
+        if not (data_dir / f).exists():
+            missing.append(f)
+    for d in required_dirs:
+        if not (data_dir / d).is_dir():
+            missing.append(f"{d}/")
+
+    if missing:
+        raise FileNotFoundError(
+            f"Required files missing from {data_dir}:\n"
+            + "\n".join(f"  - {m}" for m in missing)
+        )
+
+    remote_path = resolve_remote_path(platform, project)
+    subprocess.run(
+        [
+            "rsync",
+            "-avz",
+            "--exclude=hpc_env.sh",
+            str(data_dir) + "/",
+            f"{platform.ssh_host}:{remote_path}/data/",
+        ],
+        check=True,
+    )
+
+
 def submit_ping_job(
     platform: PlatformConfig,
     project: str,

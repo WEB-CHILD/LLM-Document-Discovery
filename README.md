@@ -48,16 +48,16 @@ sqlite3 corpus.db "SELECT model, pairs_processed FROM run_stats"            # ve
 
 ```bash
 # 1. Build container image locally (requires sudo for overlay filesystems)
-sudo llm-discovery build --output pipeline.sif
+sudo $(which uv) run llm-discovery build --output pipeline.sif
 
 # 2. Validate the built image
-llm-discovery build --validate
+uv run llm-discovery build --validate
 
 # 3. Initialise Gadi: stage container, upload model weights, run smoke test
-llm-discovery init --platform gadi --project <project-code> --gpu-queue gpuvolta
+uv run llm-discovery init --platform gadi --project <project-code> --gpu-queue gpuvolta
 
 # 4. Check the smoke test completed
-llm-discovery status --platform gadi --job-id <job-id> --project <project-code>
+uv run llm-discovery status --platform gadi --job-id <job-id> --project <project-code>
 ```
 
 The `init` command stages the container to `/scratch/<project-code>/containers/`,
@@ -68,19 +68,19 @@ submits a ping job that verifies vLLM starts and responds inside the container.
 
 ```bash
 # 1. Fetch and prepare corpus
-llm-discovery fetch
-llm-discovery prep-db
-llm-discovery preflight
+uv run llm-discovery fetch
+uv run llm-discovery prep-db
+uv run llm-discovery preflight
 
 # 2. Prepare data directory
 bash scripts/prepare_container_data.sh ./data
 
 # 3. Deploy: upload data and submit processing job
-llm-discovery deploy --platform gadi --project <project-code> --gpu-queue gpuvolta --data-dir ./data
+uv run llm-discovery deploy --platform gadi --project <project-code> --gpu-queue gpuvolta --data-dir ./data
 
 # 4. Monitor and retrieve results
-llm-discovery status --platform gadi --job-id <job-id> --project <project-code>
-llm-discovery retrieve --platform gadi --project <project-code>
+uv run llm-discovery status --platform gadi --job-id <job-id> --project <project-code>
+uv run llm-discovery retrieve --platform gadi --project <project-code>
 ```
 
 See [docs/testing-plan-local-4090.md](docs/testing-plan-local-4090.md) for the full tier-by-tier testing plan.
@@ -131,7 +131,7 @@ On HPC nodes, `scripts/process_corpus.sh` orchestrates the on-node pipeline: ins
 To build the pipeline container image:
 
 ```bash
-sudo llm-discovery build --output pipeline.sif
+sudo $(which uv) run llm-discovery build --output pipeline.sif
 ```
 
 **Ubuntu 24.04 prerequisite:** Apptainer requires unprivileged user namespaces. If builds fail, set:

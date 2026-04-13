@@ -1,5 +1,6 @@
 """Tests for platform configuration and validation."""
 
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -9,11 +10,14 @@ from pydantic import ValidationError
 from llm_discovery.platform import (
     PlatformConfig,
     generate_hpc_env,
+    get_gpu_queue_config,
     load_platforms,
     resolve_remote_path,
     rsync_to_remote,
     stage_container_image,
     submit_gadi_job,
+    submit_ping_job,
+    upload_model_cache,
     validate_platform,
 )
 
@@ -421,3 +425,159 @@ class TestDeploy:
         assert len(put_calls) >= 1
         env_content = put_calls[0][0][0].read()
         assert "VLLM_MODEL" in env_content
+
+
+class TestGetGpuQueueConfig:
+    def test_gpuhopper_returns_config(self):
+        config = get_gpu_queue_config("gpuhopper")
+        assert config["VLLM_MODEL"] == "openai/gpt-oss-120b"
+        assert config["VLLM_TP"] == "4"
+
+    def test_gpuvolta_returns_config(self):
+        config = get_gpu_queue_config("gpuvolta")
+        assert config["VLLM_MODEL"] == "google/gemma-4-31B-it"
+
+    def test_unknown_queue_raises(self):
+        with pytest.raises(ValueError, match="Unknown GPU queue"):
+            get_gpu_queue_config("nonexistent")
+
+
+class TestUploadModelCache:
+    @patch("llm_discovery.platform.subprocess.run")
+    @patch.dict(os.environ, {"HF_HUB_CACHE": ""}, clear=False)
+    def test_rsync_with_hf_hub_cache(self, mock_run, tmp_path, monkeypatch):
+        """AC2.2: Uses $HF_HUB_CACHE when set."""
+        monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
+        model_dir = tmp_path / "models--google--gemma-4-31B-it"
+        model_dir.mkdir()
+
+        platform = PlatformConfig(
+            display_name="Test",
+            ssh_host="gadi.nci.org.au",
+            remote_base="/scratch/{project}/llm-discovery",
+            gpu_type="V100",
+            submission="pbs",
+        )
+        upload_model_cache(platform, "ab12", "gpuvolta")
+
+        rsync_args = mock_run.call_args[0][0]
+        assert "rsync" in rsync_args[0]
+        assert str(model_dir) in rsync_args
+        assert "gadi.nci.org.au:/scratch/ab12/hf_cache/hub/" in rsync_args
+
+    @patch("llm_discovery.platform.subprocess.run")
+    def test_rsync_with_hf_home(self, mock_run, tmp_path, monkeypatch):
+        """AC2.2: Uses $HF_HOME/hub when $HF_HUB_CACHE unset."""
+        monkeypatch.delenv("HF_HUB_CACHE", raising=False)
+        monkeypatch.setenv("HF_HOME", str(tmp_path))
+        hub_dir = tmp_path / "hub"
+        hub_dir.mkdir()
+        model_dir = hub_dir / "models--google--gemma-4-31B-it"
+        model_dir.mkdir()
+
+        platform = PlatformConfig(
+            display_name="Test",
+            ssh_host="gadi.nci.org.au",
+            remote_base="/scratch/{project}/llm-discovery",
+            gpu_type="V100",
+            submission="pbs",
+        )
+        upload_model_cache(platform, "ab12", "gpuvolta")
+
+        rsync_args = mock_run.call_args[0][0]
+        assert str(model_dir) in rsync_args
+
+    @patch("llm_discovery.platform.subprocess.run")
+    def test_rsync_with_default_cache(self, mock_run, tmp_path, monkeypatch):
+        """AC2.2: Uses ~/.cache/huggingface/hub when env vars unset."""
+        monkeypatch.delenv("HF_HUB_CACHE", raising=False)
+        monkeypatch.delenv("HF_HOME", raising=False)
+        cache_dir = tmp_path / ".cache" / "huggingface" / "hub"
+        cache_dir.mkdir(parents=True)
+        model_dir = cache_dir / "models--google--gemma-4-31B-it"
+        model_dir.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+        platform = PlatformConfig(
+            display_name="Test",
+            ssh_host="gadi.nci.org.au",
+            remote_base="/scratch/{project}/llm-discovery",
+            gpu_type="V100",
+            submission="pbs",
+        )
+        upload_model_cache(platform, "ab12", "gpuvolta")
+
+        rsync_args = mock_run.call_args[0][0]
+        assert str(model_dir) in rsync_args
+
+    def test_model_not_found_raises(self, tmp_path, monkeypatch):
+        """AC2.4: Missing model dir raises FileNotFoundError."""
+        monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
+        # Cache exists but model dir doesn't
+
+        platform = PlatformConfig(
+            display_name="Test",
+            ssh_host="gadi.nci.org.au",
+            remote_base="/scratch/{project}/llm-discovery",
+            gpu_type="V100",
+            submission="pbs",
+        )
+        with pytest.raises(FileNotFoundError, match="Download first"):
+            upload_model_cache(platform, "ab12", "gpuvolta")
+
+    def test_no_cache_dir_raises(self, tmp_path, monkeypatch):
+        """AC2.4: No HF cache at all raises FileNotFoundError."""
+        monkeypatch.delenv("HF_HUB_CACHE", raising=False)
+        monkeypatch.delenv("HF_HOME", raising=False)
+        # Point home to a dir without .cache/huggingface/hub
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+        platform = PlatformConfig(
+            display_name="Test",
+            ssh_host="gadi.nci.org.au",
+            remote_base="/scratch/{project}/llm-discovery",
+            gpu_type="V100",
+            submission="pbs",
+        )
+        with pytest.raises(FileNotFoundError, match="No HuggingFace cache"):
+            upload_model_cache(platform, "ab12", "gpuvolta")
+
+
+class TestSubmitPingJob:
+    @patch("llm_discovery.platform.Connection")
+    def test_submits_ping_job(self, MockConnection, monkeypatch):
+        """AC2.3: Reads template, substitutes placeholders, submits via qsub."""
+        monkeypatch.chdir(Path(__file__).parent.parent)  # project root for template
+
+        mock_conn = MagicMock()
+        mock_result = MagicMock()
+        mock_result.stdout = "12345.gadi-pbs\n"
+        mock_conn.run.return_value = mock_result
+        MockConnection.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        MockConnection.return_value.__exit__ = MagicMock(return_value=False)
+
+        platform = PlatformConfig(
+            display_name="Test",
+            ssh_host="gadi.nci.org.au",
+            remote_base="/scratch/{project}/llm-discovery",
+            gpu_type="V100",
+            submission="pbs",
+        )
+        job_id = submit_ping_job(
+            platform,
+            "ab12",
+            "gpuvolta",
+            "/scratch/ab12/containers/pipeline.sif",
+        )
+
+        assert job_id == "12345.gadi-pbs"
+
+        # Verify template substitution via the put call
+        put_call = mock_conn.put.call_args
+        uploaded_content = put_call[0][0].read()
+        assert "gpuvolta" in uploaded_content
+        assert "ab12" in uploaded_content
+        assert "/scratch/ab12/containers/pipeline.sif" in uploaded_content
+        assert "{{GPU_QUEUE}}" not in uploaded_content
+        assert "{{NCI_PROJECT}}" not in uploaded_content
+        assert "{{CONTAINER_PATH}}" not in uploaded_content

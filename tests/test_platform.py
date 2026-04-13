@@ -17,6 +17,7 @@ from llm_discovery.platform import (
     stage_container_image,
     submit_gadi_job,
     submit_ping_job,
+    upload_data_dir,
     upload_model_cache,
     validate_platform,
 )
@@ -373,6 +374,13 @@ class TestDeploy:
         real_template = Path(__file__).parent.parent / "hpc" / "gadi.pbs.template"
         (tmp_path / "hpc" / "gadi.pbs.template").write_text(real_template.read_text())
 
+        # Create data dir with required files for --data-dir
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        (data_dir / "corpus.db").write_bytes(b"db")
+        (data_dir / "system_prompt.txt").write_text("prompt")
+        (data_dir / "prompts").mkdir()
+
         # Mock Connection — all platform functions use context manager now
         mock_conn = MagicMock()
         mock_sha_result = MagicMock()
@@ -404,6 +412,7 @@ class TestDeploy:
                     "--project", "ab12",
                     "--gpu-queue", "gpuvolta",
                     "--container-image", str(sif),
+                    "--data-dir", str(data_dir),
                 ],
             )
         finally:
@@ -416,7 +425,7 @@ class TestDeploy:
             c for c in mock_subprocess.call_args_list
             if c[0][0][0] == "rsync"
         ]
-        assert len(rsync_calls) >= 2
+        assert len(rsync_calls) >= 3
         sif_rsync = [c for c in rsync_calls if str(sif) in str(c[0][0])]
         assert len(sif_rsync) == 1, "Expected one rsync call for .sif staging"
 
@@ -580,3 +589,95 @@ class TestSubmitPingJob:
         assert "{{GPU_QUEUE}}" not in uploaded_content
         assert "{{NCI_PROJECT}}" not in uploaded_content
         assert "{{CONTAINER_PATH}}" not in uploaded_content
+
+
+class TestUploadDataDir:
+    @patch("llm_discovery.platform.subprocess.run")
+    def test_rsync_with_valid_data_dir(self, mock_run, tmp_path):
+        """AC3.1: Rsyncs data dir to remote with correct paths."""
+        # Create required files
+        (tmp_path / "corpus.db").write_bytes(b"db")
+        (tmp_path / "system_prompt.txt").write_text("prompt")
+        (tmp_path / "prompts").mkdir()
+
+        platform = PlatformConfig(
+            display_name="Test", ssh_host="gadi.nci.org.au",
+            remote_base="/scratch/{project}/llm-discovery",
+            gpu_type="V100", submission="pbs",
+        )
+        upload_data_dir(platform, "ab12", tmp_path)
+
+        rsync_args = mock_run.call_args[0][0]
+        assert rsync_args[0] == "rsync"
+        assert str(tmp_path) + "/" in rsync_args
+        assert "gadi.nci.org.au:/scratch/ab12/llm-discovery/data/" in rsync_args
+
+    @patch("llm_discovery.platform.subprocess.run")
+    def test_excludes_hpc_env(self, mock_run, tmp_path):
+        """AC3.3: Rsync excludes hpc_env.sh."""
+        (tmp_path / "corpus.db").write_bytes(b"db")
+        (tmp_path / "system_prompt.txt").write_text("prompt")
+        (tmp_path / "prompts").mkdir()
+
+        platform = PlatformConfig(
+            display_name="Test", ssh_host="gadi.nci.org.au",
+            remote_base="/scratch/{project}/llm-discovery",
+            gpu_type="V100", submission="pbs",
+        )
+        upload_data_dir(platform, "ab12", tmp_path)
+
+        rsync_args = mock_run.call_args[0][0]
+        assert "--exclude=hpc_env.sh" in rsync_args
+
+    def test_missing_corpus_db(self, tmp_path):
+        """AC3.2: Missing corpus.db raises FileNotFoundError."""
+        (tmp_path / "system_prompt.txt").write_text("prompt")
+        (tmp_path / "prompts").mkdir()
+
+        platform = PlatformConfig(
+            display_name="Test", ssh_host="gadi.nci.org.au",
+            remote_base="/scratch/{project}/llm-discovery",
+            gpu_type="V100", submission="pbs",
+        )
+        with pytest.raises(FileNotFoundError, match=r"corpus\.db"):
+            upload_data_dir(platform, "ab12", tmp_path)
+
+    def test_missing_system_prompt(self, tmp_path):
+        """AC3.2: Missing system_prompt.txt raises FileNotFoundError."""
+        (tmp_path / "corpus.db").write_bytes(b"db")
+        (tmp_path / "prompts").mkdir()
+
+        platform = PlatformConfig(
+            display_name="Test", ssh_host="gadi.nci.org.au",
+            remote_base="/scratch/{project}/llm-discovery",
+            gpu_type="V100", submission="pbs",
+        )
+        with pytest.raises(FileNotFoundError, match=r"system_prompt\.txt"):
+            upload_data_dir(platform, "ab12", tmp_path)
+
+    def test_missing_prompts_dir(self, tmp_path):
+        """AC3.2: Missing prompts/ raises FileNotFoundError."""
+        (tmp_path / "corpus.db").write_bytes(b"db")
+        (tmp_path / "system_prompt.txt").write_text("prompt")
+
+        platform = PlatformConfig(
+            display_name="Test", ssh_host="gadi.nci.org.au",
+            remote_base="/scratch/{project}/llm-discovery",
+            gpu_type="V100", submission="pbs",
+        )
+        with pytest.raises(FileNotFoundError, match="prompts/"):
+            upload_data_dir(platform, "ab12", tmp_path)
+
+    def test_multiple_missing_lists_all(self, tmp_path):
+        """AC3.2: Multiple missing files are all listed."""
+        platform = PlatformConfig(
+            display_name="Test", ssh_host="gadi.nci.org.au",
+            remote_base="/scratch/{project}/llm-discovery",
+            gpu_type="V100", submission="pbs",
+        )
+        with pytest.raises(FileNotFoundError) as exc_info:
+            upload_data_dir(platform, "ab12", tmp_path)
+        msg = str(exc_info.value)
+        assert "corpus.db" in msg
+        assert "system_prompt.txt" in msg
+        assert "prompts/" in msg

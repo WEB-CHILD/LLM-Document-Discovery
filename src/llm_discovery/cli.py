@@ -1,6 +1,5 @@
 """Typer CLI for LLM Document Discovery pipeline."""
 
-import io
 from pathlib import Path
 
 import typer
@@ -188,16 +187,13 @@ def deploy(
     ),
 ) -> None:
     """Sync code to HPC and submit job."""
-    from fabric import Connection
-
     from llm_discovery.platform import (
-        generate_hpc_env,
         load_platforms,
-        resolve_remote_path,
         rsync_to_remote,
         stage_container_image,
         submit_gadi_job,
         submit_ucloud_job,
+        upload_hpc_env,
     )
 
     if not _ensure_validated(platform, project):
@@ -213,25 +209,22 @@ def deploy(
         rprint(f"[bold]Syncing code to {platform_config.display_name}...[/bold]")
         rsync_to_remote(platform_config, Path(), project or "")
 
-    # Stage container image
-    rprint(f"[bold]Staging container image {container_image}...[/bold]")
-    container_path = stage_container_image(
-        platform_config, project or "", Path(container_image)
-    )
-
-    # Generate and upload hpc_env.sh
-    rprint(f"[bold]Uploading GPU configuration for {gpu_queue}...[/bold]")
-    env_content = generate_hpc_env(gpu_queue)
-    remote_path = resolve_remote_path(platform_config, project or "")
-    conn = Connection(platform_config.ssh_host)
-    conn.run(f"mkdir -p {remote_path}/data")
-    conn.put(io.StringIO(env_content), f"{remote_path}/data/hpc_env.sh")
-
     # Submit job
     if platform == "gadi":
         if not project:
             rprint("[red]Error: --project is required for Gadi deployment[/red]")
             raise typer.Exit(1)
+
+        # Stage container image
+        rprint(f"[bold]Staging container image {container_image}...[/bold]")
+        container_path = stage_container_image(
+            platform_config, project, Path(container_image)
+        )
+
+        # Generate and upload hpc_env.sh
+        rprint(f"[bold]Uploading GPU configuration for {gpu_queue}...[/bold]")
+        upload_hpc_env(platform_config, project, gpu_queue)
+
         rprint(f"[bold]Submitting PBS job to {gpu_queue} queue...[/bold]")
         job_id = submit_gadi_job(platform_config, project, gpu_queue, container_path)
         rprint(f"[green]Job submitted: {job_id}[/green]")

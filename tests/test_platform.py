@@ -173,7 +173,7 @@ class TestStageContainerImage:
         mock_sha_result = MagicMock()
         mock_sha_result.stdout = self._mock_sha_stdout(local_hash)
         mock_conn.run.return_value = mock_sha_result
-        MockConnection.return_value = mock_conn
+        MockConnection.return_value.__enter__ = MagicMock(return_value=mock_conn)
 
         platform = self._make_platform()
         remote = "/scratch/ab12/containers/pipeline.sif"
@@ -206,7 +206,7 @@ class TestStageContainerImage:
         bad_hash = "0" * 64
         mock_sha_result.stdout = self._mock_sha_stdout(bad_hash)
         mock_conn.run.return_value = mock_sha_result
-        MockConnection.return_value = mock_conn
+        MockConnection.return_value.__enter__ = MagicMock(return_value=mock_conn)
 
         platform = self._make_platform()
         with pytest.raises(RuntimeError, match="SHA256 mismatch"):
@@ -225,7 +225,7 @@ class TestStageContainerImage:
         mock_sha_result = MagicMock()
         mock_sha_result.stdout = self._mock_sha_stdout(local_hash)
         mock_conn.run.return_value = mock_sha_result
-        MockConnection.return_value = mock_conn
+        MockConnection.return_value.__enter__ = MagicMock(return_value=mock_conn)
 
         platform = self._make_platform()
         stage_container_image(platform, "ab12", sif)
@@ -322,3 +322,102 @@ class TestRsyncToRemote:
         rsync_args = mock_subprocess.call_args[0][0]
         assert "--exclude=*.sif" in rsync_args
         assert "--exclude=container/" in rsync_args
+
+
+class TestDeploy:
+    """Test that the deploy CLI wires staging functions together correctly."""
+
+    @patch("llm_discovery.cli._ensure_validated", return_value=True)
+    @patch("llm_discovery.platform.Connection")
+    @patch("llm_discovery.platform.subprocess.run")
+    def test_deploy_calls_stage_container_image(
+        self,
+        mock_subprocess,
+        MockConnection,
+        _mock_validate,
+        tmp_path,
+    ):
+        from typer.testing import CliRunner
+
+        from llm_discovery.cli import app
+
+        # Create a fake .sif file and compute its SHA256
+        sif = tmp_path / "pipeline.sif"
+        sif.write_bytes(b"fake container image data")
+
+        import hashlib
+
+        sha256 = hashlib.sha256()
+        with sif.open("rb") as f:
+            while chunk := f.read(65536):
+                sha256.update(chunk)
+        local_hash = sha256.hexdigest()
+
+        # Create platforms.yaml and PBS template in tmp_path
+        (tmp_path / "config").mkdir()
+        (tmp_path / "config" / "platforms.yaml").write_text(
+            "platforms:\n"
+            "  gadi:\n"
+            "    display_name: NCI Gadi\n"
+            "    ssh_host: gadi.nci.org.au\n"
+            "    remote_base: /scratch/{project}/llm-discovery\n"
+            "    gpu_type: V100\n"
+            "    submission: pbs\n"
+            "    checks: []\n"
+        )
+        (tmp_path / "hpc").mkdir()
+        real_template = Path(__file__).parent.parent / "hpc" / "gadi.pbs.template"
+        (tmp_path / "hpc" / "gadi.pbs.template").write_text(real_template.read_text())
+
+        # Mock Connection — all platform functions use context manager now
+        mock_conn = MagicMock()
+        mock_sha_result = MagicMock()
+        mock_sha_result.stdout = (
+            f"{local_hash}  /scratch/ab12/containers/pipeline.sif\n"
+        )
+        mock_qsub_result = MagicMock()
+        mock_qsub_result.stdout = "12345.gadi-pbs\n"
+        mock_conn.run.side_effect = [
+            mock_sha_result,   # mkdir -p containers (stage_container_image)
+            mock_sha_result,   # sha256sum (stage_container_image)
+            mock_sha_result,   # mkdir -p data (upload_hpc_env)
+            mock_qsub_result,  # qsub (submit_gadi_job)
+        ]
+        MockConnection.return_value = mock_conn
+        MockConnection.return_value.__enter__ = MagicMock(return_value=mock_conn)
+
+        import os
+
+        old_cwd = Path.cwd()
+        try:
+            os.chdir(tmp_path)
+            runner = CliRunner()
+            result = runner.invoke(
+                app,
+                [
+                    "deploy",
+                    "--platform", "gadi",
+                    "--project", "ab12",
+                    "--gpu-queue", "gpuvolta",
+                    "--container-image", str(sif),
+                ],
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, f"Deploy failed:\n{result.output}"
+
+        # Verify rsync calls: code sync + .sif staging
+        rsync_calls = [
+            c for c in mock_subprocess.call_args_list
+            if c[0][0][0] == "rsync"
+        ]
+        assert len(rsync_calls) >= 2
+        sif_rsync = [c for c in rsync_calls if str(sif) in str(c[0][0])]
+        assert len(sif_rsync) == 1, "Expected one rsync call for .sif staging"
+
+        # Verify hpc_env.sh uploaded
+        put_calls = mock_conn.put.call_args_list
+        assert len(put_calls) >= 1
+        env_content = put_calls[0][0][0].read()
+        assert "VLLM_MODEL" in env_content

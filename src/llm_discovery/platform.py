@@ -183,30 +183,30 @@ def stage_container_image(
     containers_dir = f"/scratch/{project}/containers"
     remote_sif = f"{containers_dir}/{local_sif.name}"
 
-    conn = Connection(platform.ssh_host)
-    conn.run(f"mkdir -p {containers_dir}")
+    with Connection(platform.ssh_host) as conn:
+        conn.run(f"mkdir -p {containers_dir}")
 
-    subprocess.run(
-        [
-            "rsync",
-            "-avz",
-            "--checksum",
-            "--partial",
-            str(local_sif),
-            f"{platform.ssh_host}:{remote_sif}",
-        ],
-        check=True,
-    )
-
-    # Verify remote checksum
-    result = conn.run(f"sha256sum {remote_sif}", hide=True)
-    remote_hash = result.stdout.strip().split()[0]
-    if remote_hash != local_hash:
-        raise RuntimeError(
-            f"SHA256 mismatch after transfer!\n"
-            f"  Local:  {local_hash}\n"
-            f"  Remote: {remote_hash}"
+        subprocess.run(
+            [
+                "rsync",
+                "-avz",
+                "--checksum",
+                "--partial",
+                str(local_sif),
+                f"{platform.ssh_host}:{remote_sif}",
+            ],
+            check=True,
         )
+
+        # Verify remote checksum
+        result = conn.run(f"sha256sum {remote_sif}", hide=True)
+        remote_hash = result.stdout.strip().split()[0]
+        if remote_hash != local_hash:
+            raise RuntimeError(
+                f"SHA256 mismatch after transfer!\n"
+                f"  Local:  {local_hash}\n"
+                f"  Remote: {remote_hash}"
+            )
 
     return remote_sif
 
@@ -247,6 +247,15 @@ def generate_hpc_env(gpu_queue: str) -> str:
         lines.append(f'export {key}="{value}"')
 
     return "\n".join(lines) + "\n"
+
+
+def upload_hpc_env(platform: PlatformConfig, project: str, gpu_queue: str) -> None:
+    """Generate hpc_env.sh and upload to remote data directory."""
+    env_content = generate_hpc_env(gpu_queue)
+    remote_path = resolve_remote_path(platform, project)
+    with Connection(platform.ssh_host) as conn:
+        conn.run(f"mkdir -p {remote_path}/data")
+        conn.put(io.StringIO(env_content), f"{remote_path}/data/hpc_env.sh")
 
 
 def submit_gadi_job(

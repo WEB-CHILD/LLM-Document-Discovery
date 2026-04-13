@@ -1,0 +1,19 @@
+vLLM Batch Processing Timing Report
+====================================
+
+Batch file: /work/20251104-FirstRun/batch.jsonl
+Model: openai/gpt-oss-20b
+Output file: /work/20251104-FirstRun/results.jsonl
+GPUs detected: 2
+Tensor parallel size: 2
+
+Start time: 2025-11-16 06:34:27 (1763271267)
+End time: 2025-11-16 06:39:40 (1763271580)
+Duration: 0h 5m 13s (313 seconds)
+
+Requests: 210
+Results: 210
+Exit code: 0
+
+Throughput: .67 requests/second
+Latency: 1.49 seconds/request

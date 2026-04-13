@@ -1,0 +1,46 @@
+[project]
+name = "poc-corpus"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "tqdm>=4.67.1",
+    "rich>=14.2.0",
+    "datasette>=0.65.1",
+    "openpyxl>=3.1.5",
+    "pandas>=2.3.3",
+    "pyarrow>=22.0.0",
+    "beautifulsoup4>=4.14.2",
+    "click>=8.3.0",
+    "fuzzywuzzy>=0.18.0",
+    "openai>=2.7.1",
+    "pypandoc>=1.15",
+    "selenium>=4.38.0",
+    "snakemake>=7.32.4",
+    "tiktoken>=0.12.0",
+    "warc3-wet>=0.2.5",
+    "openai-harmony>=0.0.8",
+    "pytest>=9.0.1",
+    "flashinfer-python>=0.5.2",
+    "vllm>=0.11.0",
+    "langchain-text-splitters>=1.1.0",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "gpu: marks tests requiring GPU (deselect with '-m \"not gpu\"')",
+]
+testpaths = ["tests"]
+norecursedirs = [
+    "document-corpus-llm-project",
+    "NEReus",
+    "POC-prompts",
+    "Elaborations",
+    "input",
+    ".git",
+    "node_modules",
+    ".venv"
+]

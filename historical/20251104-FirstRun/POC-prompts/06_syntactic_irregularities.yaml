@@ -1,0 +1,13 @@
+id: 6
+name: syntactic_irregularities
+description: Fragments, missing punctuation/capitalization
+prompt: |
+  Extract sentences that:
+  - Lack capitalisation at start
+  - Lack ending punctuation
+  - Contain multiple punctuation marks: "!!!", "???", "!?!?"
+  - Are fragments without subjects or verbs
+
+  Do not extract sentences with individual exclamation or question marks within the sentence.
+
+  Analyze the following document and extract matching passages:

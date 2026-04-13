@@ -1,0 +1,8 @@
+id: 4
+name: educational_register_markers
+description: School-related terminology, teacher/student references
+prompt: |
+  Extract text containing: "students", "classroom", "homework", "assignment", "worksheet", "learn", "teacher", "elever", "lærer", "학생", "선생님", "숙제", "elev", "hjemmeopgave", "lektier"
+  Do not extract the word project when it refers to non-educational contexts such as project manager or industrial projects.
+
+  Analyze the following document and extract matching passages:

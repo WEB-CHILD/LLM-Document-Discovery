@@ -1,0 +1,8 @@
+id: 17
+name: directed_at_kids
+description: Text directed at children or young users
+prompt: |
+  Extract text that is clearly directed at children or young users: "Hey kids", "for boys", "for girls", "for kids", "for children", "kid-friendly", "for børn", "til børn", "til drenge", "til piger", "kid safe", "børnevenlig"
+  Do not extract matches, when they occure as part of a website menu or navigation element.
+
+  Analyze the following document and extract matching passages:

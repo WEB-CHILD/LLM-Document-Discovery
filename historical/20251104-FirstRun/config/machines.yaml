@@ -1,0 +1,27 @@
+# config/machines.yaml
+# Machine-specific configuration
+
+machines:
+  brian-local:
+    vllm_storage: /media/brian/storage/vllm
+    require_mount: true
+    mount_check: /media/brian/storage
+    
+  brian-workstation:
+    vllm_storage: /media/brian/storage/vllm
+    require_mount: true
+    mount_check: /media/brian/storage
+    
+  # HPC patterns (regex matching)
+  "hpc-login.*":
+    vllm_storage: "${SCRATCH}/vllm"
+    require_mount: false
+    
+  "node.*":
+    vllm_storage: "${SCRATCH}/vllm"
+    require_mount: false
+
+# Default fallback
+default:
+  vllm_storage: "${HOME}/.cache/vllm"
+  require_mount: false

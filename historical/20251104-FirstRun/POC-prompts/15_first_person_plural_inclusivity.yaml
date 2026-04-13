@@ -1,0 +1,11 @@
+id: 15
+name: first_person_plural_inclusivity
+description: Inclusive 'we/us/let's' addressing reader
+prompt: |
+  Extract words like "we", "us", "our", "let's", "vi", "os", "우리", "vores", "ours" when they are used to include the reader in a community or group.
+  When used to include reader: "We can play", "Let's explore"
+  Not corporate we: distinguish "We love games!" from "We are a company"
+
+  
+
+  Analyze the following document and extract matching passages:

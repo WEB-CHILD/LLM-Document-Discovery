@@ -1,0 +1,10 @@
+id: 18
+name: fanculture
+description: References to fan culture, fandoms, and related terms
+prompt: |
+  Extract text containing references to fanculture and fandoms: "fandom", "cosplay", "stan", "fangirl", "fanboy", "merch", "fanart", "fanfiction", "convention", "con", "팬", "팬덤", "코스프레", "덕질", "덕후", "덕후력", "덕질러", "덕질하다", "덕질중", "덕질중인", "덕질하는", "idol", "idols"
+  Examples: "I am a huge fan of",  "I love", "jeg elsker", "jeg ælsker", "jeg er fan af", "i am a fan of", "i am fan of", "my favorite", "min ynglings", "min yndlings", "min favorit", "my favourite", "min favorit", "min yndlings", "jeg er vild med"
+  Examples of specific fandoms: "Marvel", "DC", "Harry Potter", "Britney Spears", "Spice Girls", "Buffy the Vampire Slayer", "Eminem", "Take That", "Fugees", "Backstreet Boys", "Aqua", "Madonna", "Beyoncé"
+
+
+  Analyze the following document and extract matching passages:

@@ -1,0 +1,109 @@
+=== HPC Environment Report ===
+Date: Fri Nov 14 20:56:13 CET 2025
+Hostname: j-5406467-job-0
+
+=== System Info ===
+Linux j-5406467-job-0 5.15.186.el8 #1 SMP Mon Jun 30 11:15:50 CEST 2025 x86_64 x86_64 x86_64 GNU/Linux
+PRETTY_NAME="Ubuntu 24.04.3 LTS"
+NAME="Ubuntu"
+VERSION_ID="24.04"
+VERSION="24.04.3 LTS (Noble Numbat)"
+VERSION_CODENAME=noble
+
+=== GPU Info ===
+Fri Nov 14 20:56:13 2025       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.158.01             Driver Version: 570.158.01     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA H100 80GB HBM3          Off |   00000000:E4:00.0 Off |                    0 |
+| N/A   34C    P0             70W /  699W |       0MiB /  81559MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+
+=== CUDA/Driver ===
+nvcc not in PATH
+
+=== Python/Environment ===
+/usr/bin/python3
+Python 3.12.3
+/home/ucloud/.local/bin/uv
+
+=== Filesystem Layout ===
+Working directory:
+/work/20251104-FirstRun
+total 188
+drwxr-x---. 1 ucloud ucloud      0 Nov 14 20:53 .
+drwxr-xr-x. 1 root   root       96 Nov 14 20:50 ..
+drwxr-xr-x. 1 ucloud ucloud      0 Nov 14 20:53 .cache
+-rwxr-xr-x. 1 root   root     2517 Nov 14 20:50 .script-generated-0.sh
+-rw-------. 1 ucloud ucloud    419 Nov 14 20:50 .script-params.yaml
+-rwxr-xr-x. 1 root   root        3 Nov 14 20:50 .script-targets-0.yaml
+-rw-------. 1 ucloud ucloud   6085 Nov 14 20:50 .script-template.j2
+-rw-------. 1 ucloud ucloud      0 Nov 14 20:50 .ucviz-data
+-rw-------. 1 ucloud ucloud   1421 Nov 14 20:50 .ucviz-ui
+-rw-r--r--. 1 ucloud ucloud 141312 Nov 14 20:56 .ucviz-utilization-data
+drwxr-x---. 1 ucloud ucloud      0 Nov 14 20:56 20251104-FirstRun
+-rw-r-----. 1 ucloud ucloud    636 Nov 14 20:50 JobParameters.json
+-rwxr-xr-x. 1 ucloud ucloud    271 Nov 14 20:50 job-0.sh
+-rwxrwxr-x. 1 ucloud ucloud   1502 Nov 14 11:42 run_validation.sh
+-rw-r--r--. 1 ucloud ucloud   5151 Nov 14 20:51 stdout-0.log
+-rw-r--r--. 1 ucloud ucloud   2725 Nov 14 20:50 validation_results_20251114_205035.log
+
+Project directory:
+total 1284
+drwxr-x---. 1 ucloud ucloud      0 Nov 14 20:56 .
+drwxr-x---. 1 ucloud ucloud      0 Nov 14 20:53 ..
+drwx------. 1 ucloud ucloud      0 Nov 14 06:22 .claude
+-rw-rw-r--. 1 ucloud ucloud    968 Nov 14 06:45 .envrc
+-rw-rw-r--. 1 ucloud ucloud   1661 Nov 14 11:36 .envrc.local.example
+drwxrwxr-x. 1 ucloud ucloud      0 Nov 14 10:32 .git
+-rw-rw-r--. 1 ucloud ucloud   4573 Oct 27 07:48 .gitignore
+-rw-rw-r--. 1 ucloud ucloud    313 Nov  4 07:07 .gitmodules
+drwxrwxr-x. 1 ucloud ucloud      0 Nov 14 06:37 .pytest_cache
+-rw-rw-r--. 1 ucloud ucloud      5 Nov 14 06:52 .python-version
+drwxr-xr-x. 1 ucloud ucloud      0 Nov  4 06:54 .stfolder
+drwxr-xr-x. 1 ucloud ucloud      0 Nov 14 20:55 .venv
+drwxrwxr-x. 1 ucloud ucloud      0 Nov 14 05:42 .vscode
+-rw-rw-r--. 1 ucloud ucloud      0 Nov 14 06:54 =0.11.0
+-rw-rw-r--. 1 ucloud ucloud  17558 Nov 14 08:14 CLAUDE.md
+-rw-rw-r--. 1 ucloud ucloud  13074 Nov 14 08:37 ELABORATION_PLAN.md
+drwxrwxr-x. 1 ucloud ucloud      0 Nov 14 06:18 Elaborations
+drwxrwxr-x. 1 ucloud ucloud      0 Nov  4 07:04 NEReus
+drwxrwxr-x. 1 ucloud ucloud      0 Nov  4 07:29 POC-prompts
+
+=== Cache Directories ===
+HF cache:
+total 0
+drwxr-xr-x. 1 ucloud ucloud 0 Nov 14 20:53 transformers
+
+=== Environment Variables ===
+EASYBUILD_INSTALLPATH=/opt/easybuild
+EASYBUILD_ROBOT_PATHS=/opt/easybuild/easyconfigs
+EB_PYTHON=/usr/bin/python3
+HF_HOME=/work/.cache/huggingface
+HOME=/home/ucloud
+MANPATH=/opt/lmod/lmod/share/man:
+MODULEPATH=/opt/easybuild/ubuntu-24.04/amd/modules/all
+MODULEPATH_ROOT=/opt/modulefiles
+MODULESHOME=/opt/lmod/lmod
+PATH=/home/ucloud/.local/bin:/home/ucloud/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+PYTHONUNBUFFERED=1
+TORCH_HOME=/work/.cache/torch
+__LMOD_REF_COUNT_MODULEPATH=/opt/easybuild/modules/all:1;/opt/easybuild/ubuntu-24.04/amd/modules/all:2;/opt/modulefiles/Linux:1;/opt/modulefiles/Core:1;/opt/lmod/lmod/modulefiles/Core:1
+
+=== Disk Space ===
+Filesystem      Size  Used Avail Use% Mounted on
+ucloud          4.7P  3.8P  936T  81% /work
+

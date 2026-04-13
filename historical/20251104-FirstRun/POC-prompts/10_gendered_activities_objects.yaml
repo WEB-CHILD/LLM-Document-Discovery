@@ -1,0 +1,11 @@
+id: 10
+name: gendered_activities_objects
+description: Gender-stereotyped activities/objects as interests
+prompt: |
+  Extract text referencing:
+  - "Dolls", "princesses", "makeup", "ballet", "pink", "dance", "horses", "tamagochi", "fashion"
+  - "Trucks", "soldiers", "football", "weapons", "blue", "soccer", "cars", "dinosaurs", "lego"
+  - "Dukker", "prinsesse", "fodbold", "인형", "공주", "축구"
+  Only when presented as activities/interests, not in other contexts
+
+  Analyze the following document and extract matching passages:

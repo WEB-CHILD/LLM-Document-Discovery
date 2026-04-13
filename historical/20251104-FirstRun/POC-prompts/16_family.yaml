@@ -1,0 +1,8 @@
+id: 16
+name: family
+description: Family-related terms and references
+prompt: |
+  Extract text containing family-related terms: "mom", "dad", "mother", "father", "sister", "brother", "aunt", "uncle", "cousin", "grandma", "grandpa", "parents", "far", "mor", "morfar", "mormor", "farfar", "farmor", "bedstemor", "bedstefar", "søster", "bror", "søstre", "brødre", "엄마", "아빠", "어머니", "아버지", "형제", "자매", "삼촌", "이모", "사촌", "할머니", "할아버지", "부모님"
+  Only extract sentences that contain specific family members, not general terms like "family" or "relatives".
+
+  Analyze the following document and extract matching passages:

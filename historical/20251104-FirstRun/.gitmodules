@@ -1,0 +1,9 @@
+[submodule "NEReus"]
+	path = NEReus
+	url = git@github.com:WEB-CHILD/NEReus.git
+[submodule "POC-prompts"]
+	path = POC-prompts
+	url = git@github.com:WEB-CHILD/POC-prompts.git
+[submodule "document-corpus-llm-project"]
+	path = document-corpus-llm-project
+	url = git@github.com:Denubis/document-corpus-llm-project.git

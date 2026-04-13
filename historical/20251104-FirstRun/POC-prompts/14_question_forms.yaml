@@ -1,0 +1,11 @@
+id: 14
+name: question_forms
+description: Direct questions posed to reader
+prompt: |
+  Extract direct questions to reader:
+  - "Do you", "Have you", "What's your", "Can you", "Har du", "Kan du", "너는", "있니", "What's your name", "Hvad hedder du", "Hvor gammel er du", "How old are you"
+  - Includes rhetorical questions and quiz questions
+
+  Do not include questions related to website navigation or menus. Also do not include questions in image alt texts.
+  
+  Analyze the following document and extract matching passages:

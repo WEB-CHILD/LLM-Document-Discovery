@@ -1,0 +1,7 @@
+id: 22
+name: governed_site
+description: Text related to site being governed or moderated by educational institutions or parents
+prompt: |
+  Extract text indicating that the site is governed, moderated, or overseen by educational institutions, parents, or guardians
+
+  Analyze the following document and extract matching passages:

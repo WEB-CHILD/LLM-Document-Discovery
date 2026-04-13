@@ -1,0 +1,8 @@
+id: 21
+name: conversations
+description: Sites containing conversations or dialogues
+prompt: |
+  Extract text containing conversations or dialogues between two or more people, such as chat logs, chatforums or forum discussions.
+
+
+  Analyze the following document and extract matching passages:

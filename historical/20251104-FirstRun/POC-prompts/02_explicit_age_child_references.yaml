@@ -1,0 +1,10 @@
+id: 2
+name: explicit_age_child_references
+description: Direct mentions of ages 5-17 or child-related terms
+prompt: |
+  Extract text containing age numbers 5-17, or words: "kids", "children", "boys", "girls", "아이들", "어린이", "børn", "barn", "dreng", "pige", "tøs", "tøser", "tøzer", "tøzzer", "tøzzzer".
+  Include: "for ages", "år", "살", "grade levels", "graders", ",5", ".5", "age", "old", "gammel"
+
+  Do not extract numbers in relation to percentages (e.g., "5%") or ratings such as "5 stars".
+
+  Analyze the following document and extract matching passages:

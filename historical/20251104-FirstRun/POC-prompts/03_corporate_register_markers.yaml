@@ -1,0 +1,8 @@
+id: 3
+name: corporate_register_markers
+description: Business language, copyright notices, formal corporate speech
+prompt: |
+  Extract text containing: "our products", "company", "corporation", "trademark", "©", "all rights reserved", "privacy policy", "terms of service"
+  Include formal business language: "we provide", "virksomhed", "회사", "vi tilbyder", "produkt", "service"
+
+  Analyze the following document and extract matching passages:

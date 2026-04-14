@@ -21,6 +21,11 @@ DATA_DIR="${REMOTE_BASE}/data"
 HF_CACHE="/scratch/{{NCI_PROJECT}}/hf_cache"
 CONTAINER_PATH="{{CONTAINER_PATH}}"
 
+# Redirect torch inductor cache to current job's jobfs to avoid stale
+# paths from previous jobs (PermissionError on /jobfs/<old-job-id>/)
+export TORCHINDUCTOR_CACHE_DIR="${PBS_JOBFS}/torchinductor"
+export TORCH_COMPILE_CACHE_DIR="${PBS_JOBFS}/torch_compile"
+
 cd "${REMOTE_BASE}" || exit 1
 
 # Run pipeline inside container
@@ -30,6 +35,9 @@ cd "${REMOTE_BASE}" || exit 1
 # NOTE: For TP>1, if shared memory errors occur, add --writable-tmpfs flag.
 singularity exec --nv \
     --bind "${DATA_DIR}:/data" \
-    --bind "${HF_CACHE}:/model_cache" --env HF_HOME=/model_cache \
+    --bind "${HF_CACHE}:/model_cache" \
+    --env HF_HOME=/model_cache \
+    --env TORCHINDUCTOR_CACHE_DIR="${TORCHINDUCTOR_CACHE_DIR}" \
+    --env TORCH_COMPILE_CACHE_DIR="${TORCH_COMPILE_CACHE_DIR}" \
     "${CONTAINER_PATH}" \
     /opt/llm-discovery/container/entrypoint.sh

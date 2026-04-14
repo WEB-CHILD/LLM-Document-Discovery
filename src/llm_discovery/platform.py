@@ -3,6 +3,7 @@
 import hashlib
 import io
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -249,13 +250,13 @@ _GPU_QUEUE_CONFIGS: dict[str, dict[str, str]] = {
         "VLLM_MAX_SEQS": "128",
         "PBS_QUEUE": "gpuvolta",
     },
-    "gpuvolta-oss20b": {
+    "gpuhopper-oss20b": {
         "VLLM_MODEL": "openai/gpt-oss-20b",
         "VLLM_TP": "1",
         "VLLM_DP": "4",
         "VLLM_GPU_MEM": "0.90",
         "VLLM_MAX_SEQS": "128",
-        "PBS_QUEUE": "gpuvolta",
+        "PBS_QUEUE": "gpuhopper",
     },
     "RTX4090-e4b": {
         "VLLM_MODEL": "google/gemma-4-E4B-it",
@@ -350,7 +351,7 @@ def _resolve_hf_cache() -> Path:
     searched = "\n  ".join(str(c) for c in candidates)
     raise FileNotFoundError(
         f"No HuggingFace cache directory found. Searched:\n  {searched}\n"
-        "Download model weights first: huggingface-cli download <model-name>"
+        "Download model weights first: uvx --from 'huggingface_hub>=1.10' hf download <model-name>"
     )
 
 
@@ -362,6 +363,35 @@ def _model_cache_dir_name(model_name: str) -> str:
     return f"models--{model_name.replace('/', '--')}"
 
 
+def _dir_size_bytes(path: Path) -> int:
+    """Return total size in bytes of all files under *path*."""
+    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+
+
+def _check_local_space_for_download(model_name: str) -> None:
+    """Warn if local HF cache partition looks too tight for a download.
+
+    Uses the HF cache directory (or its parent if it doesn't exist yet)
+    to check available space. Raises RuntimeError if < 50 GB free.
+    """
+    try:
+        cache_dir = _resolve_hf_cache()
+    except FileNotFoundError:
+        # Cache dir doesn't exist yet — check home partition
+        cache_dir = Path.home() / ".cache"
+    usage = shutil.disk_usage(cache_dir)
+    free_gb = usage.free / (1024**3)
+    if free_gb < 50:
+        raise RuntimeError(
+            f"Only {free_gb:.1f} GB free on {cache_dir} — "
+            f"downloading {model_name} needs ~40 GB.\n"
+            "Free space or set HF_HOME to a partition with more room."
+        )
+    console.print(
+        f"[dim]Local free space: {free_gb:.0f} GB on {cache_dir}[/dim]"
+    )
+
+
 def upload_model_cache(
     platform: PlatformConfig,
     project: str,
@@ -370,7 +400,9 @@ def upload_model_cache(
     """Rsync locally-cached model weights to remote HPC.
 
     Resolves model name from get_gpu_queue_config() for the given queue.
+    Checks local model size vs remote free space before transferring.
     Raises FileNotFoundError if local cache or model directory not found.
+    Raises RuntimeError if remote has insufficient space.
     """
     cache_dir = _resolve_hf_cache()
     model_name = get_gpu_queue_config(gpu_queue)["VLLM_MODEL"]
@@ -381,48 +413,44 @@ def upload_model_cache(
     if not local_model_dir.is_dir():
         raise FileNotFoundError(
             f"Model weights not found: {local_model_dir}\n"
-            f"Download first: huggingface-cli download {model_name}"
+            f"Download first: uvx --from 'huggingface_hub>=1.10' hf download {model_name}"
         )
 
+    local_bytes = _dir_size_bytes(local_model_dir)
+    local_gb = local_bytes / (1024**3)
+    console.print(f"[dim]Local model size: {local_gb:.1f} GB[/dim]")
+
+    # Check remote free space
     remote_hf_cache = f"/scratch/{project}/hf_cache/hub/"
+    with Connection(platform.ssh_host) as conn:
+        conn.run(f"mkdir -p {remote_hf_cache}", hide=True)
+        result = conn.run(
+            f"df --output=avail -B1 {remote_hf_cache} | tail -1",
+            hide=True,
+        )
+        remote_free = int(result.stdout.strip())
+        remote_free_gb = remote_free / (1024**3)
+        console.print(
+            f"[dim]Remote free space: {remote_free_gb:.0f} GB "
+            f"on /scratch/{project}[/dim]"
+        )
+        if remote_free < local_bytes * 1.1:
+            raise RuntimeError(
+                f"Insufficient space on remote: {remote_free_gb:.0f} GB free, "
+                f"need ~{local_gb * 1.1:.0f} GB for {model_name}"
+            )
+
     subprocess.run(
         [
             "rsync",
-            "-avz",
+            "-av",
             "--partial",
+            "--progress",
             str(local_model_dir),
             f"{platform.ssh_host}:{remote_hf_cache}",
         ],
         check=True,
     )
-
-
-def download_model_on_remote(
-    platform: PlatformConfig,
-    project: str,
-    gpu_queue: str,
-    container_path: str,
-) -> None:
-    """Download model weights directly on remote HPC using the staged container.
-
-    Runs huggingface-cli download inside the container on a login node.
-    Requires HF_TOKEN to be set on the remote (checked by validate).
-    """
-    model_name = get_gpu_queue_config(gpu_queue)["VLLM_MODEL"]
-    hf_cache = f"/scratch/{project}/hf_cache"
-
-    with Connection(platform.ssh_host) as conn:
-        conn.run(f"mkdir -p {hf_cache}", hide=True)
-        # Run download inside the container so we get the right Python/HF version
-        cmd = (
-            f"module load singularity && "
-            f"singularity exec "
-            f"--bind {hf_cache}:/model_cache --env HF_HOME=/model_cache "
-            f"{container_path} "
-            f"huggingface-cli download {model_name}"
-        )
-        console.print(f"[dim]Running: {cmd}[/dim]")
-        conn.run(cmd)
 
 
 def upload_data_dir(
@@ -457,8 +485,9 @@ def upload_data_dir(
     subprocess.run(
         [
             "rsync",
-            "-avz",
+            "-av",
             "--exclude=hpc_env.sh",
+            "--exclude=out/",
             str(data_dir) + "/",
             f"{platform.ssh_host}:{remote_path}/data/",
         ],

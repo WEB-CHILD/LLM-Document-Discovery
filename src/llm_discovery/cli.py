@@ -163,6 +163,31 @@ def _wait_for_ping(
     return passed
 
 
+@app.command(name="download-model")
+def download_model(
+    gpu_queue: str = typer.Option(
+        "gpuvolta", help="GPU queue config to resolve model name from"
+    ),
+) -> None:
+    """Download model weights to local HF cache (for later rsync to HPC)."""
+    from llm_discovery.platform import (
+        _check_local_space_for_download,
+        get_gpu_queue_config,
+    )
+
+    model_name = get_gpu_queue_config(gpu_queue)["VLLM_MODEL"]
+    rprint(f"[bold]Model: {model_name}[/bold]")
+
+    _check_local_space_for_download(model_name)
+
+    rprint(f"[bold]Downloading {model_name} to local HF cache...[/bold]")
+    subprocess.run(
+        ["uvx", "--from", "huggingface_hub>=1.10", "hf", "download", model_name],
+        check=True,
+    )
+    rprint(f"[green]Download complete: {model_name}[/green]")
+
+
 @app.command()
 def init(
     platform: str = typer.Option(..., help="HPC platform: gadi"),
@@ -173,15 +198,9 @@ def init(
     container_image: Path = typer.Option(
         "pipeline.sif", help="Path to local .sif container image"
     ),
-    download_on_remote: bool = typer.Option(
-        False,
-        "--download-on-remote",
-        help="Download model weights on HPC instead of uploading from local cache",
-    ),
 ) -> None:
     """First-time HPC setup: stage container, upload model weights, run smoke test."""
     from llm_discovery.platform import (
-        download_model_on_remote,
         load_platforms,
         stage_container_image,
         submit_ping_job,
@@ -227,15 +246,9 @@ def init(
     rprint(f"[bold]Uploading GPU configuration for {gpu_queue}...[/bold]")
     upload_hpc_env(platform_config, project, gpu_queue)
 
-    # Model weights
-    if download_on_remote:
-        rprint("[bold]Downloading model weights on remote HPC...[/bold]")
-        download_model_on_remote(
-            platform_config, project, gpu_queue, container_path
-        )
-    else:
-        rprint("[bold]Uploading model weights from local HF cache...[/bold]")
-        upload_model_cache(platform_config, project, gpu_queue)
+    # Model weights — rsync from local HF cache
+    rprint("[bold]Uploading model weights from local HF cache...[/bold]")
+    upload_model_cache(platform_config, project, gpu_queue)
 
     # Submit ping job and wait for result
     rprint("[bold]Submitting smoke test job...[/bold]")

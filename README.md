@@ -51,16 +51,21 @@ sqlite3 corpus.db "SELECT model, pairs_processed FROM run_stats"            # ve
 #    Validates automatically after build (checks size and CLI callable)
 sudo $(which uv) run llm-discovery build --output pipeline.sif
 
-# 2. Initialise Gadi: stage container, upload model weights, run smoke test
+# 2. Download model weights to local HF cache (checks disk space first)
+uv run llm-discovery download-model --gpu-queue gpuvolta
+
+# 3. Initialise Gadi: stage container, rsync model weights, run smoke test
 uv run llm-discovery init --platform gadi --project <project-code> --gpu-queue gpuvolta
 
-# 3. Check the smoke test completed
+# 4. Check the smoke test completed
 uv run llm-discovery status --platform gadi --job-id <job-id> --project <project-code>
 ```
 
-The `init` command stages the container to `/scratch/<project-code>/containers/`,
-rsyncs locally-cached model weights to `/scratch/<project-code>/hf_cache/`, and
-submits a ping job that verifies vLLM starts and responds inside the container.
+The `download-model` command downloads model weights to the local HuggingFace cache
+(respects `$HF_HOME`). The `init` command then stages the container to
+`/scratch/<project-code>/containers/`, rsyncs the cached weights to
+`/scratch/<project-code>/hf_cache/` (checking remote disk space before transfer),
+and submits a ping job that verifies vLLM starts and responds inside the container.
 
 #### Per-corpus workflow (each time you process a new corpus)
 
@@ -89,7 +94,8 @@ See [docs/testing-plan-local-4090.md](docs/testing-plan-local-4090.md) for the f
 |------------------|----------------------------------------------------------|
 | `build`          | Build Apptainer container image for HPC deployment        |
 | `build --validate` | Verify existing container image (size, CLI callable)    |
-| `init`           | First-time HPC setup: stage container, upload weights, smoke test |
+| `download-model` | Download model weights to local HF cache for HPC upload   |
+| `init`           | First-time HPC setup: stage container, rsync weights, smoke test |
 | `fetch`          | Download pages from Internet Archive, convert to markdown |
 | `prep-db`        | Create and populate corpus database from documents/prompts |
 | `preflight`      | Validate documents in corpus database                     |

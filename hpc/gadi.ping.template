@@ -21,10 +21,12 @@ DATA_DIR="${REMOTE_BASE}/data"
 HF_CACHE="/scratch/{{NCI_PROJECT}}/hf_cache"
 CONTAINER_PATH="{{CONTAINER_PATH}}"
 
-# Redirect torch inductor cache to current job's jobfs to avoid stale
-# paths from previous jobs (PermissionError on /jobfs/<old-job-id>/)
+# Redirect caches to current job's jobfs to avoid stale paths from
+# previous jobs (PermissionError on /jobfs/<old-job-id>/).
+# VLLM_CACHE_ROOT: vLLM's compile cache (default ~/.cache/vllm/)
+# TORCHINDUCTOR_CACHE_DIR: torch inductor cache (default /tmp/torchinductor_*)
+export VLLM_CACHE_ROOT="${PBS_JOBFS}/vllm_cache"
 export TORCHINDUCTOR_CACHE_DIR="${PBS_JOBFS}/torchinductor"
-export TORCH_COMPILE_CACHE_DIR="${PBS_JOBFS}/torch_compile"
 
 # Source GPU config for model name and TP
 source "${DATA_DIR}/hpc_env.sh"
@@ -50,8 +52,8 @@ singularity exec --nv \
     --bind "${DATA_DIR}:/data" \
     --bind "${HF_CACHE}:/model_cache" \
     --env HF_HOME=/model_cache \
+    --env VLLM_CACHE_ROOT="${VLLM_CACHE_ROOT}" \
     --env TORCHINDUCTOR_CACHE_DIR="${TORCHINDUCTOR_CACHE_DIR}" \
-    --env TORCH_COMPILE_CACHE_DIR="${TORCH_COMPILE_CACHE_DIR}" \
     "${CONTAINER_PATH}" \
     bash -c "${VLLM_CMD}" &
 

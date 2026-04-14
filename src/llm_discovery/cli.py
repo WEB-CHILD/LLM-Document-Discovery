@@ -470,7 +470,7 @@ def deploy(
         rprint(f"[green]Job submitted: {job_id}[/green]")
         rprint(
             f"[dim]Check status: uv run llm-discovery status"
-            f" --platform gadi --job-id {job_id} --watch[/dim]"
+            f" --platform gadi --project {project} --job-id {job_id} --watch[/dim]"
         )
     elif platform == "ucloud":
         submit_ucloud_job(platform_config)
@@ -526,25 +526,33 @@ def status(
         rprint("[green]Job complete.[/green]")
 
         # Fetch and display job output
-        out_path, err_path = get_job_output_paths(platform_config, job_id)
-        if out_path:
-            from rich.markup import escape
+        from rich.markup import escape
 
-            rprint("\n[bold]--- stdout ---[/bold]")
-            stdout = fetch_remote_file(platform_config, out_path)
-            rprint(escape(stdout) if stdout else "[dim](empty)[/dim]")
-            if err_path:
-                stderr = fetch_remote_file(platform_config, err_path)
-                if stderr and stderr.strip():
-                    rprint("\n[bold red]--- stderr ---[/bold red]")
-                    rprint(escape(stderr))
-        elif project and platform_config.ssh_host:
-            remote_base = resolve_remote_path(platform_config, project)
+        if not project:
             rprint(
-                f"\n[dim]Job info expired from PBS. Check output on remote:\n"
-                f"  ssh {platform_config.ssh_host}"
-                f" ls -t {remote_base}/*.out {remote_base}/*.err[/dim]"
+                "\n[yellow]Cannot fetch job output without --project. "
+                "Re-run with --project to see output and next steps.[/yellow]"
             )
+            return
+
+        remote_base = resolve_remote_path(platform_config, project)
+        out_path = f"{remote_base}/llm-discovery.out"
+        err_path = f"{remote_base}/llm-discovery.err"
+
+        rprint("\n[bold]--- Job output ---[/bold]")
+        stdout = fetch_remote_file(platform_config, out_path)
+        rprint(escape(stdout) if stdout else "[dim](empty)[/dim]")
+
+        stderr = fetch_remote_file(platform_config, err_path)
+        if stderr and stderr.strip():
+            rprint("\n[bold red]--- stderr ---[/bold red]")
+            rprint(escape(stderr))
+
+        # Show next step
+        rprint(
+            f"\n[bold]Next step:[/bold]\n"
+            f"  uv run llm-discovery retrieve --platform {platform} --project {project}"
+        )
 
 
 @app.command()
@@ -715,6 +723,10 @@ def _run_remote_pipeline(
     if job_id:
         import time as _time
 
+        from rich.markup import escape
+
+        from llm_discovery.platform import fetch_remote_file, get_job_output_paths
+
         rprint("\n[bold]===== Stage: Polling =====[/bold]")
         while True:
             status_str = check_job_status(platform_config, job_id, project)
@@ -725,6 +737,28 @@ def _run_remote_pipeline(
             )):
                 break
             _time.sleep(60)
+
+        # Fetch and display job output
+        out_path, err_path = get_job_output_paths(platform_config, job_id)
+        if out_path:
+            rprint("\n[bold]--- Job stdout ---[/bold]")
+            stdout = fetch_remote_file(platform_config, out_path)
+            rprint(escape(stdout) if stdout else "[dim](empty)[/dim]")
+            if err_path:
+                stderr = fetch_remote_file(platform_config, err_path)
+                if stderr and stderr.strip():
+                    rprint("\n[bold red]--- Job stderr ---[/bold red]")
+                    rprint(escape(stderr))
+        else:
+            # Fallback: try known output paths
+            remote_base = f"/scratch/{project}/llm-discovery"
+            for name in ("llm-discovery.out", "llm-discovery.err"):
+                content = fetch_remote_file(
+                    platform_config, f"{remote_base}/{name}"
+                )
+                if content and content.strip():
+                    rprint(f"\n[bold]--- {name} ---[/bold]")
+                    rprint(escape(content))
 
     # Retrieve
     if not yes and not typer.confirm("Retrieve results?", default=True):

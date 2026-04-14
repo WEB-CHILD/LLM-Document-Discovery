@@ -34,6 +34,7 @@ class PlatformConfig(BaseModel):
     submission: str
     modules: list[str] = []
     checks: list[PlatformCheck] = []
+    container_image: str = "pipeline.sif"
 
 
 class PlatformsConfig(BaseModel):
@@ -70,6 +71,20 @@ def validate_platform(
         for check in platform.checks:
             if check.command is None:
                 results.append((check.name, True, "skipped (no SSH)"))
+            elif platform.submission == "apptainer":
+                # Local container platform — run checks locally
+                try:
+                    result = subprocess.run(
+                        check.command, shell=True, capture_output=True,  # noqa: S602
+                        text=True, check=False,
+                    )
+                    if result.returncode == 0:
+                        output = result.stdout.strip()[:80] if result.stdout else ""
+                        results.append((check.name, True, output))
+                    else:
+                        results.append((check.name, False, result.stderr.strip()[:80]))
+                except Exception as exc:
+                    results.append((check.name, False, str(exc)))
             else:
                 results.append((check.name, True, "skipped (container platform)"))
         return results
@@ -190,9 +205,10 @@ def stage_container_image(
         subprocess.run(
             [
                 "rsync",
-                "-avz",
-                "--checksum",
+                "-av",
                 "--partial",
+                "--progress",
+                "--timeout=300",
                 str(local_sif),
                 f"{platform.ssh_host}:{remote_sif}",
             ],
@@ -240,6 +256,19 @@ _GPU_QUEUE_CONFIGS: dict[str, dict[str, str]] = {
         "VLLM_GPU_MEM": "0.90",
         "VLLM_MAX_SEQS": "128",
         "PBS_QUEUE": "gpuvolta",
+    },
+    "RTX4090-e4b": {
+        "VLLM_MODEL": "google/gemma-4-E4B-it",
+        "VLLM_TP": "1",
+        "VLLM_GPU_MEM": "0.85",
+        "VLLM_MAX_SEQS": "16",
+        "VLLM_MAX_MODEL_LEN": "131072",
+    },
+    "RTX4090-oss20b": {
+        "VLLM_MODEL": "openai/gpt-oss-20b",
+        "VLLM_TP": "1",
+        "VLLM_GPU_MEM": "0.90",
+        "VLLM_MAX_SEQS": "16",
     },
 }
 

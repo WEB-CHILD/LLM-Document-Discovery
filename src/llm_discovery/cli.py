@@ -107,6 +107,9 @@ def _wait_for_ping(
     """Poll until ping job completes, then display output. Returns True if passed."""
     import time as _time
 
+    from rich.markup import escape
+    from rich.panel import Panel
+
     from llm_discovery.platform import check_job_status, fetch_remote_file
 
     rprint("[dim]Waiting for ping job to complete (polling every 30s)...[/dim]")
@@ -119,24 +122,45 @@ def _wait_for_ping(
         _time.sleep(30)
 
     remote_base = f"/scratch/{project}/llm-discovery"
-    rprint("\n[bold]--- Ping stdout ---[/bold]")
     stdout = fetch_remote_file(
         platform_config, f"{remote_base}/llm-discovery-ping.out"
     )
-    rprint(stdout or "[dim](empty)[/dim]")
-
     stderr = fetch_remote_file(
         platform_config, f"{remote_base}/llm-discovery-ping.err"
     )
-    if stderr and stderr.strip():
-        rprint("\n[bold red]--- Ping stderr ---[/bold red]")
-        rprint(stderr)
 
-    if "PASS:" in (stdout or ""):
-        rprint("\n[green bold]Smoke test passed.[/green bold]")
-        return True
-    rprint("\n[red bold]Smoke test failed.[/red bold]")
-    return False
+    # Determine pass/fail FIRST, then display
+    passed = "PASS:" in (stdout or "")
+    failed_explicitly = "FAIL:" in (stdout or "")
+
+    # Show clear verdict banner
+    if passed:
+        rprint(Panel("[green bold]PING PASSED[/green bold]", border_style="green"))
+    elif failed_explicitly:
+        # Extract the FAIL line for a clear summary
+        fail_lines = [
+            line for line in (stdout or "").splitlines() if "FAIL:" in line
+        ]
+        fail_summary = fail_lines[0] if fail_lines else "Unknown failure"
+        rprint(Panel(
+            f"[red bold]PING FAILED[/red bold]\n{escape(fail_summary)}",
+            border_style="red",
+        ))
+    else:
+        rprint(Panel(
+            "[red bold]PING FAILED[/red bold]\n"
+            "No PASS or FAIL marker found in output — job may have crashed.",
+            border_style="red",
+        ))
+
+    # Show full output below the verdict
+    rprint("\n[bold]--- stdout ---[/bold]")
+    rprint(escape(stdout) if stdout else "[dim](empty)[/dim]")
+    if stderr and stderr.strip():
+        rprint("\n[bold red]--- stderr ---[/bold red]")
+        rprint(escape(stderr))
+
+    return passed
 
 
 @app.command()
@@ -504,14 +528,16 @@ def status(
         # Fetch and display job output
         out_path, err_path = get_job_output_paths(platform_config, job_id)
         if out_path:
+            from rich.markup import escape
+
             rprint("\n[bold]--- stdout ---[/bold]")
             stdout = fetch_remote_file(platform_config, out_path)
-            rprint(stdout or "[dim](empty)[/dim]")
+            rprint(escape(stdout) if stdout else "[dim](empty)[/dim]")
             if err_path:
                 stderr = fetch_remote_file(platform_config, err_path)
                 if stderr and stderr.strip():
                     rprint("\n[bold red]--- stderr ---[/bold red]")
-                    rprint(stderr)
+                    rprint(escape(stderr))
         elif project and platform_config.ssh_host:
             remote_base = resolve_remote_path(platform_config, project)
             rprint(
@@ -604,6 +630,42 @@ def _run_local_pipeline(
         )
     finally:
         stop_vllm_server()
+
+
+def _run_container_pipeline(
+    platform_config: "PlatformConfig",
+    output_dir: Path,
+) -> None:
+    """Run the pipeline locally via Apptainer container."""
+    from llm_discovery.local_runner import (
+        check_container_freshness,
+        run_container_pipeline,
+    )
+
+    sif_path = Path(platform_config.container_image)
+    data_dir = Path(platform_config.remote_base)
+    gpu_queue = platform_config.gpu_queue or "RTX4090-e4b"
+
+    # Check container exists
+    if not sif_path.exists():
+        rprint(
+            f"[red]Error: container image not found: {sif_path}[/red]\n"
+            "[yellow]Build it first: sudo $(which uv) run llm-discovery build[/yellow]"
+        )
+        raise typer.Exit(1)
+
+    # Check container freshness
+    if not check_container_freshness(sif_path):
+        rprint(
+            "[yellow]Container is stale — source code is newer than the image.[/yellow]\n"
+            "[yellow]Rebuild: sudo $(which uv) run llm-discovery build[/yellow]"
+        )
+        if not typer.confirm("Continue with stale container?", default=False):
+            raise typer.Exit(1)
+
+    rprint(f"\n[bold]===== Stage: Container Pipeline ({platform_config.display_name}) =====[/bold]")
+    data_dir.mkdir(parents=True, exist_ok=True)
+    run_container_pipeline(data_dir, sif_path, output_dir, gpu_queue)
 
 
 def _run_remote_pipeline(
@@ -725,4 +787,17 @@ def run(
     if platform == "local":
         _run_local_pipeline(output_dir, model, gpu_type)
     else:
-        _run_remote_pipeline(platform, project, gpu_queue, yes)
+        # Check if this is a local container platform
+        from llm_discovery.platform import load_platforms
+
+        platforms_config = load_platforms(Path("config/platforms.yaml"))
+        if platform not in platforms_config.platforms:
+            available = ", ".join(platforms_config.platforms.keys())
+            rprint(f"[red]Unknown platform '{platform}'. Available: local, {available}[/red]")
+            raise typer.Exit(1)
+
+        platform_config = platforms_config.platforms[platform]
+        if platform_config.submission == "apptainer":
+            _run_container_pipeline(platform_config, output_dir)
+        else:
+            _run_remote_pipeline(platform, project, gpu_queue, yes)

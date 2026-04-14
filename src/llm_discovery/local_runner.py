@@ -2,8 +2,12 @@
 
 Authoritative path for --platform local CLI runs. Manages vLLM server
 lifecycle via tmux, calls pipeline library functions directly (no subprocess).
+
+Also provides container-based local runs via Apptainer for platforms
+with submission: "apptainer" in platforms.yaml.
 """
 
+import shutil
 import subprocess
 import time
 import urllib.error
@@ -143,5 +147,98 @@ def run_local_pipeline(
 
     console.print("\n[bold]Stage 4: Import results[/bold]")
     run_import(db_path, output_dir)
+
+    console.print(f"\n[green]Pipeline complete. Results in {db_path}[/green]")
+
+
+def check_container_freshness(sif_path: Path) -> bool:
+    """Check if pipeline.sif is newer than all source files.
+
+    Returns True if container is fresh, False if rebuild needed.
+    """
+    if not sif_path.exists():
+        return False
+    sif_mtime = sif_path.stat().st_mtime
+    source_dirs = [Path("src"), Path("container")]
+    for source_dir in source_dirs:
+        if not source_dir.exists():
+            continue
+        for source_file in source_dir.rglob("*"):
+            if source_file.is_file() and source_file.stat().st_mtime > sif_mtime:
+                console.print(
+                    f"[yellow]Stale container: {source_file} is newer than {sif_path}[/yellow]"
+                )
+                return False
+    return True
+
+
+def run_container_pipeline(
+    data_dir: Path,
+    sif_path: Path,
+    input_dir: Path,
+    gpu_queue: str,
+) -> None:
+    """Run the full pipeline locally via Apptainer container.
+
+    Host-side: prep-db, preflight.
+    Container-side: vLLM serve + process + import-results (via entrypoint.sh).
+    """
+    from llm_discovery.platform import generate_hpc_env
+
+    db_path = data_dir / "corpus.db"
+    prompts_dir = data_dir / "prompts"
+    schema_path = Path("schema.sql")
+
+    # --- Host-side stages ---
+    console.print("\n[bold]Stage 1: Prepare database[/bold]")
+    run_prep_db(db_path, input_dir, prompts_dir, schema_path)
+
+    console.print("\n[bold]Stage 2: Preflight check[/bold]")
+    result = run_preflight(db_path)
+    if result["problematic"] > 0:
+        console.print(
+            f"[yellow]Found {result['problematic']} problematic documents[/yellow]"
+        )
+
+    # --- Generate hpc_env.sh for the container ---
+    console.print(f"\n[bold]Stage 3: Generate hpc_env.sh for {gpu_queue}[/bold]")
+    env_content = generate_hpc_env(gpu_queue)
+    hpc_env_path = data_dir / "hpc_env.sh"
+    hpc_env_path.write_text(env_content)
+    console.print(f"[dim]  Wrote {hpc_env_path}[/dim]")
+
+    # --- Copy system_prompt.txt into data/ if not already there ---
+    src_prompt = Path("system_prompt.txt")
+    dst_prompt = data_dir / "system_prompt.txt"
+    if src_prompt.exists():
+        shutil.copy2(src_prompt, dst_prompt)
+
+    # --- Resolve HF cache ---
+    hf_cache = Path.home() / ".cache" / "huggingface"
+    hf_home_env = shutil.os.environ.get("HF_HOME")
+    if hf_home_env:
+        hf_cache = Path(hf_home_env)
+
+    # --- Launch container ---
+    console.print(f"\n[bold]Stage 4: Run container ({sif_path})[/bold]")
+    data_dir_abs = data_dir.resolve()
+    hf_cache_abs = hf_cache.resolve()
+
+    cmd = [
+        "apptainer", "exec", "--nv",
+        "--bind", f"{data_dir_abs}:/data",
+        "--bind", f"{hf_cache_abs}:/model_cache",
+        "--env", "HF_HOME=/model_cache",
+        str(sif_path.resolve()),
+        "/opt/llm-discovery/container/entrypoint.sh",
+    ]
+    console.print(f"[dim]  {' '.join(cmd)}[/dim]")
+
+    proc = subprocess.run(cmd, check=False)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"Container exited with code {proc.returncode}. "
+            f"Check {data_dir}/out/vllm.log for server logs."
+        )
 
     console.print(f"\n[green]Pipeline complete. Results in {db_path}[/green]")

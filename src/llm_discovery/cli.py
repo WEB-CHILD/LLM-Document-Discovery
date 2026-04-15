@@ -344,7 +344,7 @@ def process(
     db: Path = typer.Option("corpus.db", help="Database path"),
     output_dir: Path = typer.Option("out", help="JSON output directory"),
     server_url: str = typer.Option("http://localhost:8000", help="vLLM server URL"),
-    concurrency: int = typer.Option(128, help="Number of concurrent workers"),
+    concurrency: int = typer.Option(..., help="Number of concurrent workers (match VLLM_MAX_SEQS)"),
     limit: int = typer.Option(None, help="Limit number of pairs to process"),
     model: str = typer.Option("openai/gpt-oss-120b", help="Model name"),
 ) -> None:
@@ -691,6 +691,7 @@ def _run_local_pipeline(
             server_url="http://localhost:8000",
             system_prompt_path=Path("system_prompt.txt"),
             model=default_model,
+            concurrency=gpu_params.get("max_num_seqs", 64),
         )
     finally:
         stop_vllm_server()

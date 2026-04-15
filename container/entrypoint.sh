@@ -122,7 +122,8 @@ llm-discovery process \
     --db /data/corpus.db \
     --output-dir /data/out \
     --server-url "http://localhost:${VLLM_PORT}" \
-    --model "$VLLM_MODEL" || exit 1
+    --model "$VLLM_MODEL" \
+    --concurrency "$VLLM_MAX_SEQS" || exit 1
 
 llm-discovery import-results \
     --db /data/corpus.db \

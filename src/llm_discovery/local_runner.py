@@ -121,6 +121,7 @@ def run_local_pipeline(
     server_url: str,
     system_prompt_path: Path,
     model: str = "openai/gpt-oss-120b",
+    concurrency: int = 64,
 ) -> None:
     """Run the full pipeline locally: prep-db -> preflight -> process -> import."""
     schema_path = Path("schema.sql")
@@ -143,6 +144,7 @@ def run_local_pipeline(
         system_prompt_path=system_prompt_path,
         model=model,
         prompts_dir=prompts_dir,
+        concurrency=concurrency,
     )
 
     console.print("\n[bold]Stage 4: Import results[/bold]")

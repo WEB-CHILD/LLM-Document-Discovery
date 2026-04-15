@@ -656,7 +656,7 @@ def run_processor(
     output_dir: Path,
     server_url: str,
     system_prompt_path: Path,
-    concurrency: int = 128,
+    concurrency: int,
     limit: int | None = None,
     model: str = "openai/gpt-oss-120b",
     prompts_dir: Path | None = None,

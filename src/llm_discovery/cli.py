@@ -417,6 +417,56 @@ def validate(
         raise typer.Exit(1)
 
 
+def _assemble_data_dir(data_dir: Path, gpu_queue: str) -> None:
+    """Assemble data directory for deployment: prep-db, preflight, copy assets.
+
+    Runs prep-db into data_dir/corpus.db, copies system_prompt.txt and
+    prompts/, generates hpc_env.sh. Same logic as local_runner but for
+    remote deployment.
+    """
+    import shutil
+
+    from llm_discovery.platform import generate_hpc_env
+    from llm_discovery.preflight_check import run_preflight
+    from llm_discovery.prep_db import run_prep_db
+
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "out").mkdir(exist_ok=True)
+
+    db_path = data_dir / "corpus.db"
+    schema_path = Path("schema.sql")
+    input_dir = Path("input/demo_corpus")
+    prompts_dir = Path("prompts")
+
+    rprint("[bold]Preparing database...[/bold]")
+    run_prep_db(db_path, input_dir, data_dir / "prompts", schema_path)
+
+    rprint("[bold]Running preflight checks...[/bold]")
+    result = run_preflight(db_path)
+    if result["problematic"] > 0:
+        rprint(
+            f"[yellow]Found {result['problematic']} problematic documents[/yellow]"
+        )
+
+    # Copy system_prompt.txt
+    src_prompt = Path("system_prompt.txt")
+    if src_prompt.exists():
+        shutil.copy2(src_prompt, data_dir / "system_prompt.txt")
+    else:
+        rprint("[red]Error: system_prompt.txt not found in project root[/red]")
+        raise typer.Exit(1)
+
+    # Copy prompts/ (already done by prep_db sync, but ensure they're there)
+    if prompts_dir.is_dir() and not (data_dir / "prompts").is_dir():
+        shutil.copytree(prompts_dir, data_dir / "prompts")
+
+    # Generate hpc_env.sh
+    env_content = generate_hpc_env(gpu_queue)
+    (data_dir / "hpc_env.sh").write_text(env_content)
+
+    rprint(f"[green]Data directory ready: {data_dir}[/green]")
+
+
 @app.command()
 def deploy(
     platform: str = typer.Option(..., help="HPC platform: gadi or ucloud"),
@@ -428,10 +478,10 @@ def deploy(
         "pipeline.sif", help="Path to local .sif container image"
     ),
     data_dir: Path = typer.Option(
-        None, help="Local data directory (corpus.db, system_prompt.txt, prompts/)"
+        "data", help="Local data directory to assemble and upload"
     ),
 ) -> None:
-    """Sync code to HPC and submit job."""
+    """Prepare data, sync to HPC, and submit job."""
     from llm_discovery.platform import (
         load_platforms,
         rsync_to_remote,
@@ -439,7 +489,6 @@ def deploy(
         submit_gadi_job,
         submit_ucloud_job,
         upload_data_dir,
-        upload_hpc_env,
     )
 
     if not _ensure_validated(platform, project):
@@ -450,20 +499,18 @@ def deploy(
     platforms = load_platforms(config_path)
     platform_config = platforms.platforms[platform]
 
-    # Rsync code to remote (if SSH available)
-    if platform_config.ssh_host:
-        rprint(f"[bold]Syncing code to {platform_config.display_name}...[/bold]")
-        rsync_to_remote(platform_config, Path(), project or "")
-
     # Submit job
     if platform == "gadi":
         if not project:
             rprint("[red]Error: --project is required for Gadi deployment[/red]")
             raise typer.Exit(1)
 
-        if not data_dir:
-            rprint("[red]Error: --data-dir is required for Gadi deployment[/red]")
-            raise typer.Exit(1)
+        # Assemble data directory (prep-db, preflight, copy assets)
+        _assemble_data_dir(data_dir, gpu_queue)
+
+        # Rsync code to remote
+        rprint(f"[bold]Syncing code to {platform_config.display_name}...[/bold]")
+        rsync_to_remote(platform_config, Path(), project)
 
         # Stage container image
         rprint(f"[bold]Staging container image {container_image}...[/bold]")
@@ -471,12 +518,8 @@ def deploy(
             platform_config, project, Path(container_image)
         )
 
-        # Generate and upload hpc_env.sh
-        rprint(f"[bold]Uploading GPU configuration for {gpu_queue}...[/bold]")
-        upload_hpc_env(platform_config, project, gpu_queue)
-
-        rprint(f"[bold]Uploading data from {data_dir}...[/bold]")
-        upload_data_dir(platform_config, project, Path(data_dir))
+        rprint(f"[bold]Uploading data...[/bold]")
+        upload_data_dir(platform_config, project, data_dir)
 
         rprint(f"[bold]Submitting PBS job to {gpu_queue} queue...[/bold]")
         job_id = submit_gadi_job(platform_config, project, gpu_queue, container_path)

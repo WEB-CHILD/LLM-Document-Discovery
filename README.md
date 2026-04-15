@@ -70,18 +70,13 @@ and submits a ping job that verifies vLLM starts and responds inside the contain
 #### Per-corpus workflow (each time you process a new corpus)
 
 ```bash
-# 1. Fetch and prepare corpus
+# 1. Fetch corpus documents
 uv run llm-discovery fetch
-uv run llm-discovery prep-db
-uv run llm-discovery preflight
 
-# 2. Prepare data directory
-bash scripts/prepare_container_data.sh ./data
+# 2. Deploy: assembles data dir (prep-db, preflight, assets), uploads, submits job
+uv run llm-discovery deploy --platform gadi --project <project-code> --gpu-queue gpuhopper
 
-# 3. Deploy: upload data and submit processing job
-uv run llm-discovery deploy --platform gadi --project <project-code> --gpu-queue gpuvolta --data-dir ./data
-
-# 4. Monitor and retrieve results
+# 3. Monitor and retrieve results
 uv run llm-discovery status --platform gadi --job-id <job-id> --project <project-code>
 uv run llm-discovery retrieve --platform gadi --project <project-code>
 ```

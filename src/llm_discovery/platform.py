@@ -460,11 +460,11 @@ def upload_data_dir(
 ) -> None:
     """Rsync local data directory to remote HPC.
 
-    Validates corpus.db, system_prompt.txt, and prompts/ exist.
-    Excludes hpc_env.sh (managed by upload_hpc_env).
+    Validates corpus.db, system_prompt.txt, prompts/, and hpc_env.sh exist.
+    Excludes out/ (results stay on remote).
     Raises FileNotFoundError if required files are missing.
     """
-    required_files = ["corpus.db", "system_prompt.txt"]
+    required_files = ["corpus.db", "system_prompt.txt", "hpc_env.sh"]
     required_dirs = ["prompts"]
     missing = []
 
@@ -486,7 +486,6 @@ def upload_data_dir(
         [
             "rsync",
             "-av",
-            "--exclude=hpc_env.sh",
             "--exclude=out/",
             str(data_dir) + "/",
             f"{platform.ssh_host}:{remote_path}/data/",

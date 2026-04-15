@@ -1,6 +1,8 @@
 # LLM Document Discovery
 
-Reproducible pipeline for classifying historical web documents (1996-2005) using large language models. Extracts linguistic and structural features from children's web content archived by the Internet Archive, producing a structured SQLite database of classifications with supporting blockquote evidence.
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19591245.svg)](https://doi.org/10.5281/zenodo.19591245)
+
+Reproducible pipeline for classifying arbitrary documents against user-defined categories using large language models. Given a corpus of documents and a set of category definitions, produces a structured SQLite database of classifications with supporting blockquote evidence. Developed for classifying historical web documents (1996-2005) from the Internet Archive.
 
 ## Prerequisites
 
@@ -164,11 +166,11 @@ uv run pytest tests/ -v -m network    # Run network integration tests
 
 If you use this software, please cite:
 
-> Ballsun-Stanton, B. (2026). *LLM Document Discovery* [Software]. https://github.com/WEB-CHILD/LLM-Document-Discovery
+> Ballsun-Stanton, B. (2026). *LLM Document Discovery* [Software]. https://doi.org/10.5281/zenodo.19591245
 
 See [CITATION.cff](CITATION.cff) for machine-readable citation metadata.
 
-This pipeline was built for the paper [Exploring the Archived Web through AI-Assisted Document Discovery](https://github.com/WEB-CHILD/exploring-the-archived-web-through-ai-assisted-document-discovery).
+This pipeline was built for the paper [Exploring the Archived Web through AI-Assisted Document Discovery](https://github.com/WEB-CHILD/exploring-the-archived-web-through-ai-assisted-document-discovery) by Johnston, V.H., Ballsun-Stanton, B., Jensen, H.S., Kjeldsen, C.K., & Thøgersen, J.
 
 ## Licence
 

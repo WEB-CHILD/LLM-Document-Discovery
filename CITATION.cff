@@ -1,12 +1,10 @@
-# This CITATION.cff file was generated with cffinit.
-# Visit https://bit.ly/cffinit to generate yours today!
-
 cff-version: 1.2.0
-title: ' LLM Document Discovery'
+title: LLM Document Discovery
 message: >-
   If you use this software, please cite it using the
   metadata from this file.
 type: software
+doi: 10.5281/zenodo.19591245
 authors:
   - given-names: Brian
     family-names: Ballsun-Stanton
@@ -34,10 +32,31 @@ authors:
     affiliation: Aarhus University
     orcid: 'https://orcid.org/0009-0000-8837-1057'
 repository-code: 'https://github.com/WEB-CHILD/LLM-Document-Discovery'
-repository: >-
-  https://github.com/WEB-CHILD/childhood-history-online-document-discovery
 keywords:
   - LLM
-  - Document Discovery
-  - AI-assistant
+  - document classification
+  - web archives
+  - reproducible pipeline
+  - HPC
 license: CC-BY-4.0
+references:
+  - type: article
+    title: Exploring the Archived Web through AI-Assisted Document Discovery
+    authors:
+      - given-names: Victor Harbo
+        family-names: Johnston
+        orcid: 'https://orcid.org/0000-0003-0087-1220'
+      - given-names: Brian
+        family-names: Ballsun-Stanton
+        orcid: 'https://orcid.org/0000-0003-4932-7912'
+      - given-names: Helle Strandgaard
+        family-names: Jensen
+        orcid: 'https://orcid.org/0000-0002-8623-9586'
+      - given-names: Christian Kaalund
+        family-names: Kjeldsen
+        orcid: 'https://orcid.org/0009-0005-7798-4911'
+      - given-names: Jørn
+        family-names: Thøgersen
+        orcid: 'https://orcid.org/0009-0000-8837-1057'
+    url: 'https://github.com/WEB-CHILD/exploring-the-archived-web-through-ai-assisted-document-discovery'
+    year: 2026

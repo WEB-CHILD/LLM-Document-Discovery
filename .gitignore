@@ -27,6 +27,9 @@ htmlcov/
 # Syncthing
 .stfolder/
 
+# Containers
+*.sif
+
 # Worktrees
 .worktrees/
 

@@ -1,6 +1,9 @@
 """Platform configuration and validation for HPC deployment."""
 
+import hashlib
 import io
+import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -32,6 +35,7 @@ class PlatformConfig(BaseModel):
     submission: str
     modules: list[str] = []
     checks: list[PlatformCheck] = []
+    container_image: str = "pipeline.sif"
 
 
 class PlatformsConfig(BaseModel):
@@ -68,6 +72,20 @@ def validate_platform(
         for check in platform.checks:
             if check.command is None:
                 results.append((check.name, True, "skipped (no SSH)"))
+            elif platform.submission == "apptainer":
+                # Local container platform — run checks locally
+                try:
+                    result = subprocess.run(
+                        check.command, shell=True, capture_output=True,  # noqa: S602
+                        text=True, check=False,
+                    )
+                    if result.returncode == 0:
+                        output = result.stdout.strip()[:80] if result.stdout else ""
+                        results.append((check.name, True, output))
+                    else:
+                        results.append((check.name, False, result.stderr.strip()[:80]))
+                except Exception as exc:
+                    results.append((check.name, False, str(exc)))
             else:
                 results.append((check.name, True, "skipped (container platform)"))
         return results
@@ -146,6 +164,8 @@ def rsync_to_remote(platform: PlatformConfig, local_dir: Path, project: str) -> 
             "--exclude=input/",
             "--exclude=out/",
             "--exclude=*.log",
+            "--exclude=*.sif",
+            "--exclude=container/",
             str(local_dir) + "/",
             f"{platform.ssh_host}:{remote_path}/",
         ],
@@ -153,8 +173,357 @@ def rsync_to_remote(platform: PlatformConfig, local_dir: Path, project: str) -> 
     )
 
 
+def stage_container_image(
+    platform: PlatformConfig,
+    project: str,
+    local_sif: Path,
+) -> str:
+    """Stage container .sif image to remote HPC. Returns remote path.
+
+    Raises FileNotFoundError if local .sif doesn't exist.
+    Raises RuntimeError if remote SHA256 doesn't match local after transfer.
+    """
+    if not local_sif.exists():
+        raise FileNotFoundError(
+            f"Container image not found: {local_sif}\n"
+            "Build it first: sudo apptainer build pipeline.sif container/pipeline.def"
+        )
+
+    # Compute local SHA256
+    sha256 = hashlib.sha256()
+    with local_sif.open("rb") as f:
+        while chunk := f.read(65536):
+            sha256.update(chunk)
+    local_hash = sha256.hexdigest()
+
+    # Create remote directory and transfer
+    containers_dir = f"/scratch/{project}/containers"
+    remote_sif = f"{containers_dir}/{local_sif.name}"
+
+    with Connection(platform.ssh_host) as conn:
+        conn.run(f"mkdir -p {containers_dir}")
+
+        subprocess.run(
+            [
+                "rsync",
+                "-av",
+                "--partial",
+                "--progress",
+                "--timeout=300",
+                str(local_sif),
+                f"{platform.ssh_host}:{remote_sif}",
+            ],
+            check=True,
+        )
+
+        # Verify remote checksum
+        result = conn.run(f"sha256sum {remote_sif}", hide=True)
+        remote_hash = result.stdout.strip().split()[0]
+        if remote_hash != local_hash:
+            raise RuntimeError(
+                f"SHA256 mismatch after transfer!\n"
+                f"  Local:  {local_hash}\n"
+                f"  Remote: {remote_hash}"
+            )
+
+    return remote_sif
+
+
+_GPU_QUEUE_CONFIGS: dict[str, dict[str, str]] = {
+    "gpuhopper": {
+        "VLLM_MODEL": "openai/gpt-oss-120b",
+        "VLLM_TP": "4",
+        "VLLM_GPU_MEM": "0.92",
+        "VLLM_MAX_SEQS": "384",
+    },
+    "gpuvolta": {
+        "VLLM_MODEL": "google/gemma-4-31B-it",
+        "VLLM_TP": "4",
+        "VLLM_GPU_MEM": "0.90",
+        "VLLM_MAX_SEQS": "64",
+    },
+    "gpuvolta-e4b": {
+        "VLLM_MODEL": "google/gemma-4-E4B-it",
+        "VLLM_TP": "1",
+        "VLLM_DP": "4",
+        "VLLM_GPU_MEM": "0.85",
+        "VLLM_MAX_SEQS": "128",
+        "PBS_QUEUE": "gpuvolta",
+    },
+    "gpuhopper-oss20b": {
+        "VLLM_MODEL": "openai/gpt-oss-20b",
+        "VLLM_TP": "1",
+        "VLLM_DP": "4",
+        "VLLM_GPU_MEM": "0.90",
+        "VLLM_MAX_SEQS": "128",
+        "PBS_QUEUE": "gpuhopper",
+    },
+    "RTX4090-e4b": {
+        "VLLM_MODEL": "google/gemma-4-E4B-it",
+        "VLLM_TP": "1",
+        "VLLM_GPU_MEM": "0.85",
+        "VLLM_MAX_SEQS": "16",
+        "VLLM_MAX_MODEL_LEN": "131072",
+    },
+    "RTX4090-oss20b": {
+        "VLLM_MODEL": "openai/gpt-oss-20b",
+        "VLLM_TP": "1",
+        "VLLM_GPU_MEM": "0.90",
+        "VLLM_MAX_SEQS": "16",
+    },
+}
+
+
+def get_gpu_queue_config(gpu_queue: str) -> dict[str, str]:
+    """Return GPU queue configuration dict.
+
+    Raises ValueError for unknown queues.
+    """
+    if gpu_queue not in _GPU_QUEUE_CONFIGS:
+        raise ValueError(
+            f"Unknown GPU queue: {gpu_queue}. "
+            f"Valid queues: {', '.join(sorted(_GPU_QUEUE_CONFIGS))}"
+        )
+    return dict(_GPU_QUEUE_CONFIGS[gpu_queue])
+
+
+def resolve_pbs_queue(gpu_queue: str) -> str:
+    """Return the actual PBS queue name for a gpu_queue config key.
+
+    Config entries may include a PBS_QUEUE override (e.g. gpuvolta-e4b
+    submits to the gpuvolta PBS queue). Falls back to the key itself.
+    """
+    config = get_gpu_queue_config(gpu_queue)
+    return config.get("PBS_QUEUE", gpu_queue)
+
+
+def generate_hpc_env(gpu_queue: str) -> str:
+    """Generate hpc_env.sh content for the given GPU queue.
+
+    Returns the shell script content as a string.
+    Raises ValueError for unknown queue names.
+    """
+    env = get_gpu_queue_config(gpu_queue)
+    lines = [
+        "#!/usr/bin/env bash",
+        f"# Generated by llm-discovery deploy for {gpu_queue}",
+    ]
+    for key, value in env.items():
+        if key == "PBS_QUEUE":
+            continue
+        lines.append(f'export {key}="{value}"')
+
+    return "\n".join(lines) + "\n"
+
+
+def upload_hpc_env(platform: PlatformConfig, project: str, gpu_queue: str) -> None:
+    """Generate hpc_env.sh and upload to remote data directory."""
+    env_content = generate_hpc_env(gpu_queue)
+    remote_path = resolve_remote_path(platform, project)
+    with Connection(platform.ssh_host) as conn:
+        conn.run(f"mkdir -p {remote_path}/data")
+        conn.put(io.StringIO(env_content), f"{remote_path}/data/hpc_env.sh")
+
+
+def _resolve_hf_cache() -> Path:
+    """Resolve local HuggingFace hub cache directory.
+
+    Checks $HF_HUB_CACHE, $HF_HOME/hub, ~/.cache/huggingface/hub in order.
+    Returns the first that exists.
+    Raises FileNotFoundError if none exist.
+    """
+    candidates = []
+
+    hf_hub_cache = os.environ.get("HF_HUB_CACHE")
+    if hf_hub_cache:
+        candidates.append(Path(hf_hub_cache))
+
+    hf_home = os.environ.get("HF_HOME")
+    if hf_home:
+        candidates.append(Path(hf_home) / "hub")
+
+    candidates.append(Path.home() / ".cache" / "huggingface" / "hub")
+
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+
+    searched = "\n  ".join(str(c) for c in candidates)
+    raise FileNotFoundError(
+        f"No HuggingFace cache directory found. Searched:\n  {searched}\n"
+        "Download model weights first: uvx --from 'huggingface_hub>=1.10' hf download <model-name>"
+    )
+
+
+def _model_cache_dir_name(model_name: str) -> str:
+    """Convert HF model name to cache directory name.
+
+    e.g. 'google/gemma-4-31B-it' -> 'models--google--gemma-4-31B-it'
+    """
+    return f"models--{model_name.replace('/', '--')}"
+
+
+def _dir_size_bytes(path: Path) -> int:
+    """Return total size in bytes of all files under *path*."""
+    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+
+
+def _check_local_space_for_download(model_name: str) -> None:
+    """Warn if local HF cache partition looks too tight for a download.
+
+    Uses the HF cache directory (or its parent if it doesn't exist yet)
+    to check available space. Raises RuntimeError if < 50 GB free.
+    """
+    try:
+        cache_dir = _resolve_hf_cache()
+    except FileNotFoundError:
+        # Cache dir doesn't exist yet — check home partition
+        cache_dir = Path.home() / ".cache"
+    usage = shutil.disk_usage(cache_dir)
+    free_gb = usage.free / (1024**3)
+    if free_gb < 50:
+        raise RuntimeError(
+            f"Only {free_gb:.1f} GB free on {cache_dir} — "
+            f"downloading {model_name} needs ~40 GB.\n"
+            "Free space or set HF_HOME to a partition with more room."
+        )
+    console.print(
+        f"[dim]Local free space: {free_gb:.0f} GB on {cache_dir}[/dim]"
+    )
+
+
+def upload_model_cache(
+    platform: PlatformConfig,
+    project: str,
+    gpu_queue: str,
+) -> None:
+    """Rsync locally-cached model weights to remote HPC.
+
+    Resolves model name from get_gpu_queue_config() for the given queue.
+    Checks local model size vs remote free space before transferring.
+    Raises FileNotFoundError if local cache or model directory not found.
+    Raises RuntimeError if remote has insufficient space.
+    """
+    cache_dir = _resolve_hf_cache()
+    model_name = get_gpu_queue_config(gpu_queue)["VLLM_MODEL"]
+
+    model_dir_name = _model_cache_dir_name(model_name)
+    local_model_dir = cache_dir / model_dir_name
+
+    if not local_model_dir.is_dir():
+        raise FileNotFoundError(
+            f"Model weights not found: {local_model_dir}\n"
+            f"Download first: uvx --from 'huggingface_hub>=1.10' hf download {model_name}"
+        )
+
+    local_bytes = _dir_size_bytes(local_model_dir)
+    local_gb = local_bytes / (1024**3)
+    console.print(f"[dim]Local model size: {local_gb:.1f} GB[/dim]")
+
+    # Check remote free space
+    remote_hf_cache = f"/scratch/{project}/hf_cache/hub/"
+    with Connection(platform.ssh_host) as conn:
+        conn.run(f"mkdir -p {remote_hf_cache}", hide=True)
+        result = conn.run(
+            f"df --output=avail -B1 {remote_hf_cache} | tail -1",
+            hide=True,
+        )
+        remote_free = int(result.stdout.strip())
+        remote_free_gb = remote_free / (1024**3)
+        console.print(
+            f"[dim]Remote free space: {remote_free_gb:.0f} GB "
+            f"on /scratch/{project}[/dim]"
+        )
+        if remote_free < local_bytes * 1.1:
+            raise RuntimeError(
+                f"Insufficient space on remote: {remote_free_gb:.0f} GB free, "
+                f"need ~{local_gb * 1.1:.0f} GB for {model_name}"
+            )
+
+    subprocess.run(
+        [
+            "rsync",
+            "-av",
+            "--partial",
+            "--progress",
+            str(local_model_dir),
+            f"{platform.ssh_host}:{remote_hf_cache}",
+        ],
+        check=True,
+    )
+
+
+def upload_data_dir(
+    platform: PlatformConfig,
+    project: str,
+    data_dir: Path,
+) -> None:
+    """Rsync local data directory to remote HPC.
+
+    Validates corpus.db, system_prompt.txt, prompts/, and hpc_env.sh exist.
+    Excludes out/ (results stay on remote).
+    Raises FileNotFoundError if required files are missing.
+    """
+    required_files = ["corpus.db", "system_prompt.txt", "hpc_env.sh"]
+    required_dirs = ["prompts"]
+    missing = []
+
+    for f in required_files:
+        if not (data_dir / f).exists():
+            missing.append(f)
+    for d in required_dirs:
+        if not (data_dir / d).is_dir():
+            missing.append(f"{d}/")
+
+    if missing:
+        raise FileNotFoundError(
+            f"Required files missing from {data_dir}:\n"
+            + "\n".join(f"  - {m}" for m in missing)
+        )
+
+    remote_path = resolve_remote_path(platform, project)
+    subprocess.run(
+        [
+            "rsync",
+            "-av",
+            "--exclude=out/",
+            str(data_dir) + "/",
+            f"{platform.ssh_host}:{remote_path}/data/",
+        ],
+        check=True,
+    )
+
+
+def submit_ping_job(
+    platform: PlatformConfig,
+    project: str,
+    gpu_queue: str,
+    container_path: str,
+) -> str:
+    """Submit a vLLM ping/smoke-test PBS job to Gadi. Returns job ID."""
+    template_path = Path("hpc/gadi.ping.template")
+    if not template_path.exists():
+        raise FileNotFoundError(f"Ping template not found: {template_path}")
+
+    template = template_path.read_text()
+    pbs_script = (
+        template.replace("{{GPU_QUEUE}}", resolve_pbs_queue(gpu_queue))
+        .replace("{{NCI_PROJECT}}", project)
+        .replace("{{CONTAINER_PATH}}", container_path)
+    )
+
+    remote_path = resolve_remote_path(platform, project)
+    with Connection(platform.ssh_host) as conn:
+        conn.put(io.StringIO(pbs_script), f"{remote_path}/gadi.ping.pbs")
+        result = conn.run(f"cd {remote_path} && qsub gadi.ping.pbs", hide=True)
+    return result.stdout.strip()
+
+
 def submit_gadi_job(
-    platform: PlatformConfig, project: str, gpu_queue: str = "gpuhopper"
+    platform: PlatformConfig,
+    project: str,
+    gpu_queue: str = "gpuhopper",
+    container_path: str = "",
 ) -> str:
     """Submit PBS job to Gadi. Returns job ID."""
     template_path = Path("hpc/gadi.pbs.template")
@@ -162,8 +531,10 @@ def submit_gadi_job(
         raise FileNotFoundError(f"PBS template not found: {template_path}")
 
     template = template_path.read_text()
-    pbs_script = template.replace("{{GPU_QUEUE}}", gpu_queue).replace(
-        "{{NCI_PROJECT}}", project
+    pbs_script = (
+        template.replace("{{GPU_QUEUE}}", resolve_pbs_queue(gpu_queue))
+        .replace("{{NCI_PROJECT}}", project)
+        .replace("{{CONTAINER_PATH}}", container_path)
     )
 
     remote_path = resolve_remote_path(platform, project)
@@ -207,7 +578,7 @@ def retrieve_results(platform: PlatformConfig, local_path: Path, project: str) -
         [
             "rsync",
             "-avz",
-            f"{platform.ssh_host}:{remote_path}/corpus.db",
+            f"{platform.ssh_host}:{remote_path}/data/corpus.db",
             str(local_path),
         ],
         check=True,
@@ -215,27 +586,119 @@ def retrieve_results(platform: PlatformConfig, local_path: Path, project: str) -
     return local_path
 
 
+def fetch_remote_file(platform: PlatformConfig, remote_path: str) -> str | None:
+    """Fetch a text file from the remote HPC. Returns content or None."""
+    if platform.ssh_host is None:
+        return None
+    with Connection(platform.ssh_host) as conn:
+        result = conn.run(f"cat {remote_path}", warn=True, hide=True)
+        if result.ok:
+            return result.stdout
+    return None
+
+
+def _parse_qstat_attrs(output: str) -> dict[str, str]:
+    """Parse qstat -f output into a dict, handling PBS continuation lines."""
+    attrs: dict[str, str] = {}
+    current_key = ""
+    current_val = ""
+    for raw_line in output.split("\n"):
+        if " = " in raw_line and not raw_line.startswith("\t"):
+            # New key = value pair; save previous
+            if current_key:
+                attrs[current_key] = current_val
+            stripped = raw_line.strip()
+            key, _, value = stripped.partition(" = ")
+            current_key = key.strip()
+            current_val = value.strip()
+        elif raw_line.startswith("\t") and current_key:
+            # Continuation line
+            current_val += raw_line.strip()
+    if current_key:
+        attrs[current_key] = current_val
+    return attrs
+
+
+def get_job_output_paths(
+    platform: PlatformConfig, job_id: str
+) -> tuple[str | None, str | None]:
+    """Get Output_Path and Error_Path for a PBS job. Returns (out, err)."""
+    if platform.ssh_host is None:
+        return None, None
+    with Connection(platform.ssh_host) as conn:
+        result = conn.run(f"qstat -f {job_id}", warn=True, hide=True)
+        if not result.ok:
+            return None, None
+        attrs = _parse_qstat_attrs(result.stdout)
+        out_path = attrs.get("Output_Path")
+        err_path = attrs.get("Error_Path")
+        # Strip host: prefix (format is host:/path/to/file)
+        if out_path and ":" in out_path:
+            out_path = out_path.split(":", maxsplit=1)[-1]
+        if err_path and ":" in err_path:
+            err_path = err_path.split(":", maxsplit=1)[-1]
+        return out_path, err_path
+
+
+def _count_jobs_ahead(conn: Connection, queue: str, job_id: str) -> int:
+    """Count jobs queued ahead of job_id in the given PBS queue.
+
+    PBS execution queues (e.g. gpuvolta-exec) are stripped to the routing
+    queue (gpuvolta) since that's where queued jobs are listed.
+    """
+    routing_queue = queue.removesuffix("-exec")
+    my_num = int(job_id.split(".", maxsplit=1)[0])
+    result = conn.run(f"qstat {routing_queue}", warn=True, hide=True)
+    if not result.ok:
+        return 0
+    ahead = 0
+    for line in result.stdout.strip().split("\n"):
+        parts = line.split()
+        if len(parts) >= 5 and parts[-2] == "Q":
+            try:
+                other_num = int(parts[0].split(".", maxsplit=1)[0])
+                if other_num < my_num:
+                    ahead += 1
+            except ValueError:
+                continue
+    return ahead
+
+
 def check_job_status(
     platform: PlatformConfig, job_id: str, _project: str | None = None
 ) -> str:
-    """Check job status on HPC. Returns status string."""
+    """Check job status on HPC. Returns status string with details."""
     if platform.ssh_host is None:
         return "unknown (no SSH)"
-    conn = Connection(platform.ssh_host)
-    result = conn.run(f"qstat {job_id}", warn=True, hide=True)
-    if not result.ok:
-        return "completed or not found"
-    # Parse qstat output for status column
-    for line in result.stdout.strip().split("\n"):
-        if job_id.split(".", maxsplit=1)[0] in line:
-            parts = line.split()
-            if len(parts) >= 5:
-                status_code = parts[-2]
-                status_map = {
-                    "Q": "queued",
-                    "R": "running",
-                    "F": "finished",
-                    "E": "exiting",
-                }
-                return status_map.get(status_code, status_code)
-    return "unknown"
+
+    status_map = {
+        "Q": "queued",
+        "R": "running",
+        "H": "held",
+        "F": "finished",
+        "E": "exiting",
+        "S": "suspended",
+    }
+
+    with Connection(platform.ssh_host) as conn:
+        # Try qstat -f for detailed info
+        result = conn.run(f"qstat -f {job_id}", warn=True, hide=True)
+        if not result.ok:
+            return "completed or not found"
+
+        attrs = _parse_qstat_attrs(result.stdout)
+
+        state = attrs.get("job_state", "?")
+        status = status_map.get(state, state)
+
+        if state == "R":
+            walltime = attrs.get("resources_used.walltime")
+            if walltime:
+                return f"{status} (elapsed {walltime})"
+        elif state == "Q":
+            queue = attrs.get("queue", "")
+            ahead = _count_jobs_ahead(conn, queue, job_id) if queue else 0
+            if ahead > 0:
+                return f"{status} ({ahead} jobs ahead)"
+
+        return status

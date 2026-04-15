@@ -22,6 +22,32 @@ platforms:
       - name: "uv available"
         command: "which uv"
 
+  local-e4b:
+    display_name: "Local RTX4090 (Gemma4 E4B)"
+    ssh_host: null
+    remote_base: "./data"
+    gpu_type: "RTX4090"
+    gpu_queue: "RTX4090-e4b"
+    submission: "apptainer"
+    checks:
+      - name: "apptainer available"
+        command: "which apptainer"
+      - name: "NVIDIA GPU accessible"
+        command: "nvidia-smi"
+
+  local-oss20b:
+    display_name: "Local RTX4090 (GPT-OSS 20B)"
+    ssh_host: null
+    remote_base: "./data"
+    gpu_type: "RTX4090"
+    gpu_queue: "RTX4090-oss20b"
+    submission: "apptainer"
+    checks:
+      - name: "apptainer available"
+        command: "which apptainer"
+      - name: "NVIDIA GPU accessible"
+        command: "nvidia-smi"
+
   ucloud:
     display_name: "DeiC UCloud"
     ssh_host: null

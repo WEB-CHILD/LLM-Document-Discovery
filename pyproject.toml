@@ -98,9 +98,10 @@ docstring-code-format = true
 markers = [
     "gpu: marks tests requiring GPU (deselect with '-m \"not gpu\"')",
     "network: marks tests requiring network access (deselect with '-m \"not network\"')",
+    "container: marks tests requiring a pre-built pipeline.sif (deselect with '-m \"not container\"')",
 ]
 testpaths = ["tests"]
-addopts = "-m 'not network and not gpu'"
+addopts = "-m 'not network and not gpu and not container'"
 
 [tool.ty.rules]
 deprecated = "ignore"

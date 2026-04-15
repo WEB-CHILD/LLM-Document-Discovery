@@ -1,5 +1,7 @@
 """Typer CLI for LLM Document Discovery pipeline."""
 
+import shutil
+import subprocess
 from pathlib import Path
 
 import typer
@@ -11,10 +13,260 @@ from llm_discovery.preflight_check import run_preflight
 from llm_discovery.prep_db import run_prep_db
 from llm_discovery.unified_processor import run_processor
 
+_TERMINAL_PREFIXES = ("finished", "completed or not found")
+
+
+def _poll_until_complete(
+    platform_config: object, job_id: str, project: str | None, interval: int = 30
+) -> str:
+    """Poll job status until terminal. Returns final status string."""
+    import time as _time
+
+    from llm_discovery.platform import check_job_status
+
+    while True:
+        result = check_job_status(platform_config, job_id, project)
+        rprint(f"  Job {job_id}: [bold]{result}[/bold]")
+        if result.startswith(_TERMINAL_PREFIXES):
+            return result
+        _time.sleep(interval)
+
 app = typer.Typer(
     name="llm-discovery",
     help="Reproducible pipeline for classifying historical web documents using LLMs.",
 )
+
+
+@app.command()
+def build(
+    output: Path = typer.Option(
+        "pipeline.sif", help="Output path for the .sif container image"
+    ),
+    validate_only: bool = typer.Option(
+        False, "--validate", help="Validate existing .sif without building"
+    ),
+) -> None:
+    """Build the Apptainer container image for HPC deployment."""
+
+    def _validate_sif(sif_path: Path) -> bool:
+        """Validate a .sif image: exists, >1GB, CLI callable inside."""
+        if not sif_path.exists():
+            rprint(f"[red]Error: {sif_path} does not exist[/red]")
+            return False
+
+        size_gb = sif_path.stat().st_size / (1024**3)
+        if size_gb < 1.0:
+            rprint(
+                f"[red]Error: {sif_path} is {size_gb:.2f}GB — "
+                f"expected >1GB for a valid pipeline image[/red]"
+            )
+            return False
+
+        rprint("[dim]Checking CLI inside container...[/dim]")
+        result = subprocess.run(
+            ["apptainer", "exec", str(sif_path), "llm-discovery", "--help"],
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            rprint(
+                f"[red]Error: llm-discovery CLI not callable inside "
+                f"container (exit {result.returncode})[/red]"
+            )
+            return False
+
+        rprint(f"[green]Validated: {sif_path} ({size_gb:.1f}GB, CLI OK)[/green]")
+        return True
+
+    if validate_only:
+        if not _validate_sif(output):
+            raise typer.Exit(1)
+        return
+
+    if not shutil.which("apptainer"):
+        rprint(
+            "[red]Error: apptainer not found on PATH.[/red]\n"
+            "[yellow]Install Apptainer: "
+            "https://apptainer.org/docs/admin/main/installation.html[/yellow]"
+        )
+        raise typer.Exit(1)
+
+    def_path = Path("container/pipeline.def")
+    if not def_path.exists():
+        rprint(f"[red]Error: {def_path} not found[/red]")
+        raise typer.Exit(1)
+
+    rprint(
+        f"[bold]Building container from {def_path}...[/bold]\n"
+        "[dim]Note: apptainer build typically requires root (sudo) "
+        "to create overlay filesystems.[/dim]"
+    )
+    try:
+        subprocess.run(
+            ["apptainer", "build", str(output), str(def_path)],
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        rprint(
+            f"[red]Build failed (exit {exc.returncode}).[/red]\n"
+            "[yellow]If permission denied, re-run with sudo:\n\n"
+            f"  sudo $(which uv) run llm-discovery build --output {output}[/yellow]\n"
+        )
+        raise typer.Exit(1) from exc
+
+    rprint("[bold]Validating built image...[/bold]")
+    if not _validate_sif(output):
+        raise typer.Exit(1)
+
+
+def _wait_for_ping(
+    platform_config: object, job_id: str, project: str
+) -> bool:
+    """Poll until ping job completes, then display output. Returns True if passed."""
+    from rich.markup import escape
+    from rich.panel import Panel
+
+    from llm_discovery.platform import fetch_remote_file
+
+    rprint("[dim]Waiting for ping job to complete (polling every 30s)...[/dim]")
+    _poll_until_complete(platform_config, job_id, project, interval=30)
+
+    remote_base = f"/scratch/{project}/llm-discovery"
+    stdout = fetch_remote_file(
+        platform_config, f"{remote_base}/llm-discovery-ping.out"
+    )
+    stderr = fetch_remote_file(
+        platform_config, f"{remote_base}/llm-discovery-ping.err"
+    )
+
+    # Determine pass/fail FIRST, then display
+    passed = "PASS:" in (stdout or "")
+    failed_explicitly = "FAIL:" in (stdout or "")
+
+    # Show clear verdict banner
+    if passed:
+        rprint(Panel("[green bold]PING PASSED[/green bold]", border_style="green"))
+    elif failed_explicitly:
+        # Extract the FAIL line for a clear summary
+        fail_lines = [
+            line for line in (stdout or "").splitlines() if "FAIL:" in line
+        ]
+        fail_summary = fail_lines[0] if fail_lines else "Unknown failure"
+        rprint(Panel(
+            f"[red bold]PING FAILED[/red bold]\n{escape(fail_summary)}",
+            border_style="red",
+        ))
+    else:
+        rprint(Panel(
+            "[red bold]PING FAILED[/red bold]\n"
+            "No PASS or FAIL marker found in output — job may have crashed.",
+            border_style="red",
+        ))
+
+    # Show full output below the verdict
+    rprint("\n[bold]--- stdout ---[/bold]")
+    rprint(escape(stdout) if stdout else "[dim](empty)[/dim]")
+    if stderr and stderr.strip():
+        rprint("\n[bold red]--- stderr ---[/bold red]")
+        rprint(escape(stderr))
+
+    return passed
+
+
+@app.command(name="download-model")
+def download_model(
+    gpu_queue: str = typer.Option(
+        "gpuvolta", help="GPU queue config to resolve model name from"
+    ),
+) -> None:
+    """Download model weights to local HF cache (for later rsync to HPC)."""
+    from llm_discovery.platform import (
+        _check_local_space_for_download,
+        get_gpu_queue_config,
+    )
+
+    model_name = get_gpu_queue_config(gpu_queue)["VLLM_MODEL"]
+    rprint(f"[bold]Model: {model_name}[/bold]")
+
+    _check_local_space_for_download(model_name)
+
+    rprint(f"[bold]Downloading {model_name} to local HF cache...[/bold]")
+    subprocess.run(
+        ["uvx", "--from", "huggingface_hub>=1.10", "hf", "download", model_name],
+        check=True,
+    )
+    rprint(f"[green]Download complete: {model_name}[/green]")
+
+
+@app.command()
+def init(
+    platform: str = typer.Option(..., help="HPC platform: gadi"),
+    project: str = typer.Option(..., help="NCI project code"),
+    gpu_queue: str = typer.Option(
+        "gpuvolta", help="Gadi GPU queue: gpuhopper or gpuvolta"
+    ),
+    container_image: Path = typer.Option(
+        "pipeline.sif", help="Path to local .sif container image"
+    ),
+) -> None:
+    """First-time HPC setup: stage container, upload model weights, run smoke test."""
+    from llm_discovery.platform import (
+        load_platforms,
+        stage_container_image,
+        submit_ping_job,
+        upload_hpc_env,
+        upload_model_cache,
+    )
+
+    if not _ensure_validated(platform, project):
+        rprint("[yellow]Validation failed — fix issues before init[/yellow]")
+        raise typer.Exit(1)
+
+    if not container_image.exists():
+        rprint(
+            f"[red]Error: container image not found: {container_image}[/red]\n"
+            "[yellow]Build it first: sudo $(which uv) run llm-discovery build[/yellow]"
+        )
+        raise typer.Exit(1)
+
+    config_path = Path("config/platforms.yaml")
+    if not config_path.exists():
+        rprint(
+            f"[red]Error: platform config not found: {config_path}[/red]\n"
+            "[yellow]Run from the project root directory.[/yellow]"
+        )
+        raise typer.Exit(1)
+    platforms = load_platforms(config_path)
+    if platform not in platforms.platforms:
+        available = ", ".join(platforms.platforms)
+        rprint(
+            f"[red]Error: unknown platform '{platform}'."
+            f" Available: {available}[/red]"
+        )
+        raise typer.Exit(1)
+    platform_config = platforms.platforms[platform]
+
+    # Stage container image
+    rprint(f"[bold]Staging container image {container_image}...[/bold]")
+    container_path = stage_container_image(
+        platform_config, project, container_image
+    )
+
+    # Generate and upload hpc_env.sh
+    rprint(f"[bold]Uploading GPU configuration for {gpu_queue}...[/bold]")
+    upload_hpc_env(platform_config, project, gpu_queue)
+
+    # Model weights — rsync from local HF cache
+    rprint("[bold]Uploading model weights from local HF cache...[/bold]")
+    upload_model_cache(platform_config, project, gpu_queue)
+
+    # Submit ping job and wait for result
+    rprint("[bold]Submitting smoke test job...[/bold]")
+    job_id = submit_ping_job(platform_config, project, gpu_queue, container_path)
+    rprint(f"[green]Ping job submitted: {job_id}[/green]")
+
+    if not _wait_for_ping(platform_config, job_id, project):
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -102,7 +354,7 @@ def process(
     db: Path = typer.Option("corpus.db", help="Database path"),
     output_dir: Path = typer.Option("out", help="JSON output directory"),
     server_url: str = typer.Option("http://localhost:8000", help="vLLM server URL"),
-    concurrency: int = typer.Option(128, help="Number of concurrent workers"),
+    concurrency: int = typer.Option(..., help="Number of concurrent workers (match VLLM_MAX_SEQS)"),
     limit: int = typer.Option(None, help="Limit number of pairs to process"),
     model: str = typer.Option("openai/gpt-oss-120b", help="Model name"),
 ) -> None:
@@ -175,6 +427,45 @@ def validate(
         raise typer.Exit(1)
 
 
+def _assemble_data_dir(data_dir: Path, gpu_queue: str) -> None:
+    """Assemble data directory for deployment: prep-db, preflight, copy assets.
+
+    Runs prep-db into data_dir/corpus.db, copies system_prompt.txt and
+    prompts/, generates hpc_env.sh. Same logic as local_runner but for
+    remote deployment.
+    """
+    import shutil
+
+    from llm_discovery.local_runner import prepare_corpus
+    from llm_discovery.platform import generate_hpc_env
+
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "out").mkdir(exist_ok=True)
+
+    db_path = data_dir / "corpus.db"
+    input_dir = Path("input/demo_corpus")
+
+    prepare_corpus(db_path, input_dir, data_dir / "prompts")
+
+    # Copy system_prompt.txt
+    src_prompt = Path("system_prompt.txt")
+    if src_prompt.exists():
+        shutil.copy2(src_prompt, data_dir / "system_prompt.txt")
+    else:
+        rprint("[red]Error: system_prompt.txt not found in project root[/red]")
+        raise typer.Exit(1)
+
+    # Copy prompts/ (already done by prep_db sync, but ensure they're there)
+    if prompts_dir.is_dir() and not (data_dir / "prompts").is_dir():
+        shutil.copytree(prompts_dir, data_dir / "prompts")
+
+    # Generate hpc_env.sh
+    env_content = generate_hpc_env(gpu_queue)
+    (data_dir / "hpc_env.sh").write_text(env_content)
+
+    rprint(f"[green]Data directory ready: {data_dir}[/green]")
+
+
 @app.command()
 def deploy(
     platform: str = typer.Option(..., help="HPC platform: gadi or ucloud"),
@@ -182,13 +473,21 @@ def deploy(
     gpu_queue: str = typer.Option(
         "gpuhopper", help="Gadi GPU queue: gpuhopper or gpuvolta"
     ),
+    container_image: str = typer.Option(
+        "pipeline.sif", help="Path to local .sif container image"
+    ),
+    data_dir: Path = typer.Option(
+        "data", help="Local data directory to assemble and upload"
+    ),
 ) -> None:
-    """Sync code to HPC and submit job."""
+    """Prepare data, sync to HPC, and submit job."""
     from llm_discovery.platform import (
         load_platforms,
         rsync_to_remote,
+        stage_container_image,
         submit_gadi_job,
         submit_ucloud_job,
+        upload_data_dir,
     )
 
     if not _ensure_validated(platform, project):
@@ -199,22 +498,34 @@ def deploy(
     platforms = load_platforms(config_path)
     platform_config = platforms.platforms[platform]
 
-    # Rsync code to remote (if SSH available)
-    if platform_config.ssh_host:
-        rprint(f"[bold]Syncing code to {platform_config.display_name}...[/bold]")
-        rsync_to_remote(platform_config, Path(), project or "")
-
     # Submit job
     if platform == "gadi":
         if not project:
             rprint("[red]Error: --project is required for Gadi deployment[/red]")
             raise typer.Exit(1)
+
+        # Assemble data directory (prep-db, preflight, copy assets)
+        _assemble_data_dir(data_dir, gpu_queue)
+
+        # Rsync code to remote
+        rprint(f"[bold]Syncing code to {platform_config.display_name}...[/bold]")
+        rsync_to_remote(platform_config, Path(), project)
+
+        # Stage container image
+        rprint(f"[bold]Staging container image {container_image}...[/bold]")
+        container_path = stage_container_image(
+            platform_config, project, Path(container_image)
+        )
+
+        rprint(f"[bold]Uploading data...[/bold]")
+        upload_data_dir(platform_config, project, data_dir)
+
         rprint(f"[bold]Submitting PBS job to {gpu_queue} queue...[/bold]")
-        job_id = submit_gadi_job(platform_config, project, gpu_queue)
+        job_id = submit_gadi_job(platform_config, project, gpu_queue, container_path)
         rprint(f"[green]Job submitted: {job_id}[/green]")
         rprint(
-            f"[dim]Check status: llm-discovery status"
-            f" --platform gadi --job-id {job_id}[/dim]"
+            f"[dim]Check status: uv run llm-discovery status"
+            f" --platform gadi --project {project} --job-id {job_id} --watch[/dim]"
         )
     elif platform == "ucloud":
         submit_ucloud_job(platform_config)
@@ -228,9 +539,20 @@ def status(
     platform: str = typer.Option(..., help="HPC platform: gadi or ucloud"),
     job_id: str = typer.Option(None, help="Job ID to check"),
     project: str = typer.Option(None, help="NCI project code"),
+    watch: bool = typer.Option(
+        False, "--watch", "-w", help="Poll every 30s until job completes"
+    ),
 ) -> None:
     """Check status of running HPC job."""
-    from llm_discovery.platform import check_job_status, load_platforms
+    import time as _time
+
+    from llm_discovery.platform import (
+        check_job_status,
+        fetch_remote_file,
+        get_job_output_paths,
+        load_platforms,
+        resolve_remote_path,
+    )
 
     config_path = Path("config/platforms.yaml")
     platforms = load_platforms(config_path)
@@ -243,8 +565,42 @@ def status(
         rprint("[red]Error: --job-id is required[/red]")
         raise typer.Exit(1)
 
-    result = check_job_status(platform_config, job_id, project)
-    rprint(f"Job {job_id}: [bold]{result}[/bold]")
+    if not watch:
+        result = check_job_status(platform_config, job_id, project)
+        rprint(f"Job {job_id}: [bold]{result}[/bold]")
+        return
+
+    _poll_until_complete(platform_config, job_id, project, interval=30)
+    rprint("[green]Job complete.[/green]")
+
+    # Fetch and display job output
+    from rich.markup import escape
+
+    if not project:
+        rprint(
+            "\n[yellow]Cannot fetch job output without --project. "
+            "Re-run with --project to see output and next steps.[/yellow]"
+        )
+        return
+
+    remote_base = resolve_remote_path(platform_config, project)
+    out_path = f"{remote_base}/llm-discovery.out"
+    err_path = f"{remote_base}/llm-discovery.err"
+
+    rprint("\n[bold]--- Job output ---[/bold]")
+    stdout = fetch_remote_file(platform_config, out_path)
+    rprint(escape(stdout) if stdout else "[dim](empty)[/dim]")
+
+    stderr = fetch_remote_file(platform_config, err_path)
+    if stderr and stderr.strip():
+        rprint("\n[bold red]--- stderr ---[/bold red]")
+        rprint(escape(stderr))
+
+    # Show next step
+    rprint(
+        f"\n[bold]Next step:[/bold]\n"
+        f"  uv run llm-discovery retrieve --platform {platform} --project {project}"
+    )
 
 
 @app.command()
@@ -327,9 +683,46 @@ def _run_local_pipeline(
             server_url="http://localhost:8000",
             system_prompt_path=Path("system_prompt.txt"),
             model=default_model,
+            concurrency=gpu_params.get("max_num_seqs", 64),
         )
     finally:
         stop_vllm_server()
+
+
+def _run_container_pipeline(
+    platform_config: "PlatformConfig",
+    output_dir: Path,
+) -> None:
+    """Run the pipeline locally via Apptainer container."""
+    from llm_discovery.local_runner import (
+        check_container_freshness,
+        run_container_pipeline,
+    )
+
+    sif_path = Path(platform_config.container_image)
+    data_dir = Path(platform_config.remote_base)
+    gpu_queue = platform_config.gpu_queue or "RTX4090-e4b"
+
+    # Check container exists
+    if not sif_path.exists():
+        rprint(
+            f"[red]Error: container image not found: {sif_path}[/red]\n"
+            "[yellow]Build it first: sudo $(which uv) run llm-discovery build[/yellow]"
+        )
+        raise typer.Exit(1)
+
+    # Check container freshness
+    if not check_container_freshness(sif_path):
+        rprint(
+            "[yellow]Container is stale — source code is newer than the image.[/yellow]\n"
+            "[yellow]Rebuild: sudo $(which uv) run llm-discovery build[/yellow]"
+        )
+        if not typer.confirm("Continue with stale container?", default=False):
+            raise typer.Exit(1)
+
+    rprint(f"\n[bold]===== Stage: Container Pipeline ({platform_config.display_name}) =====[/bold]")
+    data_dir.mkdir(parents=True, exist_ok=True)
+    run_container_pipeline(data_dir, sif_path, output_dir, gpu_queue)
 
 
 def _run_remote_pipeline(
@@ -377,18 +770,34 @@ def _run_remote_pipeline(
 
     # Poll status
     if job_id:
-        import time as _time
+        from rich.markup import escape
+
+        from llm_discovery.platform import fetch_remote_file, get_job_output_paths
 
         rprint("\n[bold]===== Stage: Polling =====[/bold]")
-        while True:
-            status_str = check_job_status(platform_config, job_id, project)
-            rprint(f"  Job {job_id}: {status_str}")
-            if status_str in (
-                "finished",
-                "completed or not found",
-            ):
-                break
-            _time.sleep(60)
+        _poll_until_complete(platform_config, job_id, project, interval=60)
+
+        # Fetch and display job output
+        out_path, err_path = get_job_output_paths(platform_config, job_id)
+        if out_path:
+            rprint("\n[bold]--- Job stdout ---[/bold]")
+            stdout = fetch_remote_file(platform_config, out_path)
+            rprint(escape(stdout) if stdout else "[dim](empty)[/dim]")
+            if err_path:
+                stderr = fetch_remote_file(platform_config, err_path)
+                if stderr and stderr.strip():
+                    rprint("\n[bold red]--- Job stderr ---[/bold red]")
+                    rprint(escape(stderr))
+        else:
+            # Fallback: try known output paths
+            remote_base = f"/scratch/{project}/llm-discovery"
+            for name in ("llm-discovery.out", "llm-discovery.err"):
+                content = fetch_remote_file(
+                    platform_config, f"{remote_base}/{name}"
+                )
+                if content and content.strip():
+                    rprint(f"\n[bold]--- {name} ---[/bold]")
+                    rprint(escape(content))
 
     # Retrieve
     if not yes and not typer.confirm("Retrieve results?", default=True):
@@ -451,4 +860,17 @@ def run(
     if platform == "local":
         _run_local_pipeline(output_dir, model, gpu_type)
     else:
-        _run_remote_pipeline(platform, project, gpu_queue, yes)
+        # Check if this is a local container platform
+        from llm_discovery.platform import load_platforms
+
+        platforms_config = load_platforms(Path("config/platforms.yaml"))
+        if platform not in platforms_config.platforms:
+            available = ", ".join(platforms_config.platforms.keys())
+            rprint(f"[red]Unknown platform '{platform}'. Available: local, {available}[/red]")
+            raise typer.Exit(1)
+
+        platform_config = platforms_config.platforms[platform]
+        if platform_config.submission == "apptainer":
+            _run_container_pipeline(platform_config, output_dir)
+        else:
+            _run_remote_pipeline(platform, project, gpu_queue, yes)

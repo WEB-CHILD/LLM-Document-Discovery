@@ -1,0 +1,53 @@
+Bootstrap: docker
+From: vllm/vllm-openai:v0.19.0
+
+%labels
+    Author Brian Ballsun-Stanton
+    Description LLM Document Discovery Pipeline — Apptainer container for vLLM + llm-discovery
+    Version 0.1.0
+    DesignDoc docs/design-plans/2026-04-12-apptainer-pipeline.md
+
+%files
+    # Only copy what pip install and the entrypoint need.
+    # Do NOT copy the entire repo — that would include .git/, *.sif, input/, out/, etc.
+    # Runtime data (corpus.db, system_prompt.txt, prompts/) is bind-mounted at /data/.
+    #
+    # NOTE: container/entrypoint.sh must exist before building (created in Task 2).
+    src /opt/llm-discovery/src
+    pyproject.toml /opt/llm-discovery/pyproject.toml
+    README.md /opt/llm-discovery/README.md
+    container/entrypoint.sh /opt/llm-discovery/container/entrypoint.sh
+
+%post
+    # Install llm-discovery on top of vLLM's existing environment.
+    # Following vLLM's documented image extension pattern:
+    # https://docs.vllm.ai/en/stable/deployment/docker/
+    # The base image provides uv, Python 3.12, and a virtualenv at /opt/venv.
+    # --system targets the active venv via VIRTUAL_ENV/PATH (vLLM convention).
+    cd /opt/llm-discovery
+    uv pip install --system --no-cache 'transformers>=5.5.0'
+    uv pip install --system --no-cache .
+
+    chmod +x /opt/llm-discovery/container/entrypoint.sh
+
+    # Pre-download tiktoken vocab files for offline use.
+    # openai_harmony (used by gpt-oss models) loads these from Azure blob
+    # storage at runtime — blocked on HPC compute nodes with no internet.
+    # TIKTOKEN_ENCODINGS_BASE points tiktoken-rs at this directory.
+    mkdir -p /opt/tiktoken
+    curl -sL -o /opt/tiktoken/o200k_base.tiktoken \
+        https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken
+    curl -sL -o /opt/tiktoken/cl100k_base.tiktoken \
+        https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken
+    # Verify checksums — fail build if files are corrupt
+    echo "446a9538cb6c348e3516120d7c08b09f57c36495e2acfffe59a5bf8b0cfb1a2d  /opt/tiktoken/o200k_base.tiktoken" | sha256sum -c
+    echo "223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7  /opt/tiktoken/cl100k_base.tiktoken" | sha256sum -c
+
+%environment
+    export HF_HUB_OFFLINE=1
+    export TRANSFORMERS_OFFLINE=1
+    export PYTHONUNBUFFERED=1
+    export TIKTOKEN_ENCODINGS_BASE=/opt/tiktoken
+
+%runscript
+    exec /opt/llm-discovery/container/entrypoint.sh "$@"

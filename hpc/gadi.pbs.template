@@ -12,28 +12,34 @@
 #PBS -e llm-discovery.err
 
 # Load required modules
-module load cuda/12.0
-module load python3/3.12
+module load cuda/12.9.0
+module load singularity
 
-# Change to working directory
-cd "${PBS_O_WORKDIR}" || exit 1
+# Paths
+REMOTE_BASE="/scratch/{{NCI_PROJECT}}/llm-discovery"
+DATA_DIR="${REMOTE_BASE}/data"
+HF_CACHE="/scratch/{{NCI_PROJECT}}/hf_cache"
+CONTAINER_PATH="{{CONTAINER_PATH}}"
 
-# Set GPU-specific vLLM parameters based on queue
-# These are read by scripts/process_corpus.sh -> scripts/start_server.sh
-case "{{GPU_QUEUE}}" in
-    gpuhopper)
-        export VLLM_TP=4
-        export VLLM_GPU_MEM=0.92
-        export VLLM_MAX_SEQS=384
-        ;;
-    gpuvolta)
-        export VLLM_TP=4
-        export VLLM_GPU_MEM=0.90
-        export VLLM_MAX_SEQS=64
-        ;;
-esac
+# Redirect caches to current job's jobfs to avoid stale paths from
+# previous jobs (PermissionError on /jobfs/<old-job-id>/).
+# VLLM_CACHE_ROOT: vLLM's compile cache (default ~/.cache/vllm/)
+# TORCHINDUCTOR_CACHE_DIR: torch inductor cache (default /tmp/torchinductor_*)
+export VLLM_CACHE_ROOT="${PBS_JOBFS}/vllm_cache"
+export TORCHINDUCTOR_CACHE_DIR="${PBS_JOBFS}/torchinductor"
 
-export VLLM_MODEL="${VLLM_MODEL:-openai/gpt-oss-120b}"
+cd "${REMOTE_BASE}" || exit 1
 
-# Run the pipeline
-bash scripts/process_corpus.sh
+# Run pipeline inside container
+# Gadi auto-mounts /scratch, /jobfs, home dirs, and NVIDIA drivers.
+# --bind mounts data directory and HuggingFace model cache.
+# The container entrypoint sources /data/hpc_env.sh for GPU-specific config.
+# NOTE: For TP>1, if shared memory errors occur, add --writable-tmpfs flag.
+singularity exec --nv \
+    --bind "${DATA_DIR}:/data" \
+    --bind "${HF_CACHE}:/model_cache" \
+    --env HF_HOME=/model_cache \
+    --env VLLM_CACHE_ROOT="${VLLM_CACHE_ROOT}" \
+    --env TORCHINDUCTOR_CACHE_DIR="${TORCHINDUCTOR_CACHE_DIR}" \
+    "${CONTAINER_PATH}" \
+    /opt/llm-discovery/container/entrypoint.sh

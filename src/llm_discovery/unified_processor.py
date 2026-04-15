@@ -199,12 +199,8 @@ def build_request_body(
 
 # Response Format
 
-First, provide your reasoning and analysis.
-Then, provide ONLY valid JSON with this structure:
-{{
-  "match": "yes" or "maybe" or "no",
-  "blockquotes": ["quote 1", "quote 2"]
-}}""",
+Explain your reasoning in 1-2 sentences. Then respond with JSON. Do not use a fenced codeblock.
+{{"match": "yes" or "maybe" or "no", "blockquotes": ["verbatim quote 1", "verbatim quote 2"]}}""",
         },
     ]
     return custom_id, {
@@ -660,7 +656,7 @@ def run_processor(
     output_dir: Path,
     server_url: str,
     system_prompt_path: Path,
-    concurrency: int = 128,
+    concurrency: int,
     limit: int | None = None,
     model: str = "openai/gpt-oss-120b",
     prompts_dir: Path | None = None,

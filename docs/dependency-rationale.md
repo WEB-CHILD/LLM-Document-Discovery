@@ -14,7 +14,7 @@ Maintained by design plans (when adding deps) and controlled-dependency-upgrade 
 ## typer
 **Added:** 2026-04-09
 **Design plan:** docs/design-plans/2026-04-09-reproducible-demo.md
-**Claim:** We use Typer for the `llm-discovery` CLI with subcommands (fetch, validate, deploy, status, retrieve, run). Provides type-annotated argument parsing and auto-generated help.
+**Claim:** We use Typer for the `llm-discovery` CLI with subcommands (build, download-model, init, fetch, prep-db, preflight, process, import-results, validate, deploy, status, retrieve, run). Provides type-annotated argument parsing and auto-generated help.
 **Evidence:** `src/llm_discovery/cli.py` defines the Typer app.
 **Serves:** Runtime users (local machine)
 

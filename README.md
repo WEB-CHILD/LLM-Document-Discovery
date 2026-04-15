@@ -166,7 +166,15 @@ uv run pytest tests/ -v -m network    # Run network integration tests
 
 If you use this software, please cite:
 
-> Ballsun-Stanton, B. (2026). *LLM Document Discovery* [Software]. https://doi.org/10.5281/zenodo.19591245
+```bibtex
+@software{Ballsun-Stanton_LLM_Document_Discovery,
+author = {Ballsun-Stanton, Brian and Johnston, Victor Harbo and Jensen, Helle Strandgaard and Kjeldsen, Christian Kaalund and Thøgersen, Jørn},
+doi = {10.5281/zenodo.19591245},
+license = {CC-BY-4.0},
+title = {{LLM Document Discovery}},
+url = {https://github.com/WEB-CHILD/LLM-Document-Discovery}
+}
+```
 
 See [CITATION.cff](CITATION.cff) for machine-readable citation metadata.
 

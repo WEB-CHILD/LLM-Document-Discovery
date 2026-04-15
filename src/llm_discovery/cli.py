@@ -13,6 +13,24 @@ from llm_discovery.preflight_check import run_preflight
 from llm_discovery.prep_db import run_prep_db
 from llm_discovery.unified_processor import run_processor
 
+_TERMINAL_PREFIXES = ("finished", "completed or not found")
+
+
+def _poll_until_complete(
+    platform_config: object, job_id: str, project: str | None, interval: int = 30
+) -> str:
+    """Poll job status until terminal. Returns final status string."""
+    import time as _time
+
+    from llm_discovery.platform import check_job_status
+
+    while True:
+        result = check_job_status(platform_config, job_id, project)
+        rprint(f"  Job {job_id}: [bold]{result}[/bold]")
+        if result.startswith(_TERMINAL_PREFIXES):
+            return result
+        _time.sleep(interval)
+
 app = typer.Typer(
     name="llm-discovery",
     help="Reproducible pipeline for classifying historical web documents using LLMs.",
@@ -105,21 +123,13 @@ def _wait_for_ping(
     platform_config: object, job_id: str, project: str
 ) -> bool:
     """Poll until ping job completes, then display output. Returns True if passed."""
-    import time as _time
-
     from rich.markup import escape
     from rich.panel import Panel
 
-    from llm_discovery.platform import check_job_status, fetch_remote_file
+    from llm_discovery.platform import fetch_remote_file
 
     rprint("[dim]Waiting for ping job to complete (polling every 30s)...[/dim]")
-    terminal_prefixes = ("finished", "completed or not found")
-    while True:
-        result = check_job_status(platform_config, job_id, project)
-        rprint(f"  Job {job_id}: [bold]{result}[/bold]")
-        if result.startswith(terminal_prefixes):
-            break
-        _time.sleep(30)
+    _poll_until_complete(platform_config, job_id, project, interval=30)
 
     remote_base = f"/scratch/{project}/llm-discovery"
     stdout = fetch_remote_file(
@@ -426,27 +436,16 @@ def _assemble_data_dir(data_dir: Path, gpu_queue: str) -> None:
     """
     import shutil
 
+    from llm_discovery.local_runner import prepare_corpus
     from llm_discovery.platform import generate_hpc_env
-    from llm_discovery.preflight_check import run_preflight
-    from llm_discovery.prep_db import run_prep_db
 
     data_dir.mkdir(parents=True, exist_ok=True)
     (data_dir / "out").mkdir(exist_ok=True)
 
     db_path = data_dir / "corpus.db"
-    schema_path = Path("schema.sql")
     input_dir = Path("input/demo_corpus")
-    prompts_dir = Path("prompts")
 
-    rprint("[bold]Preparing database...[/bold]")
-    run_prep_db(db_path, input_dir, data_dir / "prompts", schema_path)
-
-    rprint("[bold]Running preflight checks...[/bold]")
-    result = run_preflight(db_path)
-    if result["problematic"] > 0:
-        rprint(
-            f"[yellow]Found {result['problematic']} problematic documents[/yellow]"
-        )
+    prepare_corpus(db_path, input_dir, data_dir / "prompts")
 
     # Copy system_prompt.txt
     src_prompt = Path("system_prompt.txt")
@@ -566,49 +565,42 @@ def status(
         rprint("[red]Error: --job-id is required[/red]")
         raise typer.Exit(1)
 
-    result = check_job_status(platform_config, job_id, project)
-    rprint(f"Job {job_id}: [bold]{result}[/bold]")
+    if not watch:
+        result = check_job_status(platform_config, job_id, project)
+        rprint(f"Job {job_id}: [bold]{result}[/bold]")
+        return
 
-    if watch:
-        from datetime import datetime
+    _poll_until_complete(platform_config, job_id, project, interval=30)
+    rprint("[green]Job complete.[/green]")
 
-        terminal_prefixes = ("finished", "completed or not found")
-        while not result.startswith(terminal_prefixes):
-            rprint("[dim]  ... waiting 30s ...[/dim]")
-            _time.sleep(30)
-            result = check_job_status(platform_config, job_id, project)
-            now = datetime.now().strftime("%H:%M:%S")
-            rprint(f"[dim]{now}[/dim] Job {job_id}: [bold]{result}[/bold]")
-        rprint("[green]Job complete.[/green]")
+    # Fetch and display job output
+    from rich.markup import escape
 
-        # Fetch and display job output
-        from rich.markup import escape
-
-        if not project:
-            rprint(
-                "\n[yellow]Cannot fetch job output without --project. "
-                "Re-run with --project to see output and next steps.[/yellow]"
-            )
-            return
-
-        remote_base = resolve_remote_path(platform_config, project)
-        out_path = f"{remote_base}/llm-discovery.out"
-        err_path = f"{remote_base}/llm-discovery.err"
-
-        rprint("\n[bold]--- Job output ---[/bold]")
-        stdout = fetch_remote_file(platform_config, out_path)
-        rprint(escape(stdout) if stdout else "[dim](empty)[/dim]")
-
-        stderr = fetch_remote_file(platform_config, err_path)
-        if stderr and stderr.strip():
-            rprint("\n[bold red]--- stderr ---[/bold red]")
-            rprint(escape(stderr))
-
-        # Show next step
+    if not project:
         rprint(
-            f"\n[bold]Next step:[/bold]\n"
-            f"  uv run llm-discovery retrieve --platform {platform} --project {project}"
+            "\n[yellow]Cannot fetch job output without --project. "
+            "Re-run with --project to see output and next steps.[/yellow]"
         )
+        return
+
+    remote_base = resolve_remote_path(platform_config, project)
+    out_path = f"{remote_base}/llm-discovery.out"
+    err_path = f"{remote_base}/llm-discovery.err"
+
+    rprint("\n[bold]--- Job output ---[/bold]")
+    stdout = fetch_remote_file(platform_config, out_path)
+    rprint(escape(stdout) if stdout else "[dim](empty)[/dim]")
+
+    stderr = fetch_remote_file(platform_config, err_path)
+    if stderr and stderr.strip():
+        rprint("\n[bold red]--- stderr ---[/bold red]")
+        rprint(escape(stderr))
+
+    # Show next step
+    rprint(
+        f"\n[bold]Next step:[/bold]\n"
+        f"  uv run llm-discovery retrieve --platform {platform} --project {project}"
+    )
 
 
 @app.command()
@@ -778,22 +770,12 @@ def _run_remote_pipeline(
 
     # Poll status
     if job_id:
-        import time as _time
-
         from rich.markup import escape
 
         from llm_discovery.platform import fetch_remote_file, get_job_output_paths
 
         rprint("\n[bold]===== Stage: Polling =====[/bold]")
-        while True:
-            status_str = check_job_status(platform_config, job_id, project)
-            rprint(f"  Job {job_id}: {status_str}")
-            if status_str.startswith((
-                "finished",
-                "completed or not found",
-            )):
-                break
-            _time.sleep(60)
+        _poll_until_complete(platform_config, job_id, project, interval=60)
 
         # Fetch and display job output
         out_path, err_path = get_job_output_paths(platform_config, job_id)

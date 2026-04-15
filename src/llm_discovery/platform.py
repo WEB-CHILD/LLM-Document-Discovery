@@ -284,7 +284,7 @@ def get_gpu_queue_config(gpu_queue: str) -> dict[str, str]:
             f"Unknown GPU queue: {gpu_queue}. "
             f"Valid queues: {', '.join(sorted(_GPU_QUEUE_CONFIGS))}"
         )
-    return _GPU_QUEUE_CONFIGS[gpu_queue]
+    return dict(_GPU_QUEUE_CONFIGS[gpu_queue])
 
 
 def resolve_pbs_queue(gpu_queue: str) -> str:

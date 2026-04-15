@@ -26,6 +26,21 @@ console = Console()
 TMUX_SESSION = "llm-server"
 
 
+def prepare_corpus(db_path: Path, input_dir: Path, prompts_dir: Path) -> None:
+    """Run prep-db and preflight check. Shared by all pipeline entry points."""
+    schema_path = Path("schema.sql")
+
+    console.print("\n[bold]Prepare database[/bold]")
+    run_prep_db(db_path, input_dir, prompts_dir, schema_path)
+
+    console.print("[bold]Preflight check[/bold]")
+    result = run_preflight(db_path)
+    if result["problematic"] > 0:
+        console.print(
+            f"[yellow]Found {result['problematic']} problematic documents[/yellow]"
+        )
+
+
 def start_vllm_server(model: str, gpu_params: dict, port: int = 8000) -> None:
     """Start vLLM in tmux session."""
     tp = gpu_params.get("tensor_parallel_size", 4)
@@ -124,19 +139,9 @@ def run_local_pipeline(
     concurrency: int = 64,
 ) -> None:
     """Run the full pipeline locally: prep-db -> preflight -> process -> import."""
-    schema_path = Path("schema.sql")
+    prepare_corpus(db_path, input_dir, prompts_dir)
 
-    console.print("\n[bold]Stage 1: Prepare database[/bold]")
-    run_prep_db(db_path, input_dir, prompts_dir, schema_path)
-
-    console.print("\n[bold]Stage 2: Preflight check[/bold]")
-    result = run_preflight(db_path)
-    if result["problematic"] > 0:
-        console.print(
-            f"[yellow]Found {result['problematic']} problematic documents[/yellow]"
-        )
-
-    console.print("\n[bold]Stage 3: Process with LLM[/bold]")
+    console.print("\n[bold]Process with LLM[/bold]")
     run_processor(
         db_path=db_path,
         output_dir=output_dir,
@@ -189,18 +194,8 @@ def run_container_pipeline(
 
     db_path = data_dir / "corpus.db"
     prompts_dir = data_dir / "prompts"
-    schema_path = Path("schema.sql")
 
-    # --- Host-side stages ---
-    console.print("\n[bold]Stage 1: Prepare database[/bold]")
-    run_prep_db(db_path, input_dir, prompts_dir, schema_path)
-
-    console.print("\n[bold]Stage 2: Preflight check[/bold]")
-    result = run_preflight(db_path)
-    if result["problematic"] > 0:
-        console.print(
-            f"[yellow]Found {result['problematic']} problematic documents[/yellow]"
-        )
+    prepare_corpus(db_path, input_dir, prompts_dir)
 
     # --- Generate hpc_env.sh for the container ---
     console.print(f"\n[bold]Stage 3: Generate hpc_env.sh for {gpu_queue}[/bold]")

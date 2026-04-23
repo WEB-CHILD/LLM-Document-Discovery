@@ -357,23 +357,36 @@ def process(
     concurrency: int = typer.Option(..., help="Number of concurrent workers (match VLLM_MAX_SEQS)"),
     limit: int = typer.Option(None, help="Limit number of pairs to process"),
     model: str = typer.Option("openai/gpt-oss-120b", help="Model name"),
+    system_prompt: Path = typer.Option(
+        "system_prompt.txt",
+        "--system-prompt",
+        help="System prompt file (loaded verbatim as the system role)",
+    ),
+    prompts_dir: Path = typer.Option(
+        "prompts",
+        "--prompts-dir",
+        help="Directory containing category *.yaml prompt definitions",
+    ),
 ) -> None:
     """Run LLM classification on unprocessed document-category pairs."""
     if not db.exists():
         rprint(f"[red]Error: database not found: {db}[/red]")
         raise typer.Exit(1)
-    system_prompt_path = Path("system_prompt.txt")
-    if not system_prompt_path.exists():
-        rprint("[red]Error: system_prompt.txt not found[/red]")
+    if not system_prompt.exists():
+        rprint(f"[red]Error: system prompt not found: {system_prompt}[/red]")
+        raise typer.Exit(1)
+    if not prompts_dir.exists():
+        rprint(f"[red]Error: prompts directory not found: {prompts_dir}[/red]")
         raise typer.Exit(1)
     run_processor(
         db_path=db,
         output_dir=output_dir,
         server_url=server_url,
-        system_prompt_path=system_prompt_path,
+        system_prompt_path=system_prompt,
         concurrency=concurrency,
         limit=limit,
         model=model,
+        prompts_dir=prompts_dir,
     )
 
 

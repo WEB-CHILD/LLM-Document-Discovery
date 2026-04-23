@@ -59,7 +59,7 @@ Entry point: `llm-discovery` (Typer app).
 | `status` | `--platform`, `--job-id`, `--project`, `--watch` | Check job status; `--watch` polls every 30s, fetches output on completion |
 | `retrieve` | `--platform`, `--project` | Pull corpus.db back from HPC |
 | `run` | `--platform`, `--gpu-queue`, `--yes` | End-to-end pipeline; routes to `_run_container_pipeline` for `apptainer` submission or `_run_remote_pipeline` for PBS |
-| `process` | `--db`, `--output-dir`, `--server-url`, `--model` | Run LLM classification |
+| `process` | `--db`, `--output-dir`, `--server-url`, `--model`, `--system-prompt`, `--prompts-dir` | Run LLM classification |
 | `import-results` | `--db`, `--input-dir` | Import JSON results into database |
 
 ### Platform Configuration (src/llm_discovery/platform.py)

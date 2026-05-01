@@ -36,7 +36,7 @@ class TestLoadPlatforms:
         gadi = config.platforms["gadi"]
         assert gadi.display_name == "NCI Gadi"
         assert gadi.ssh_host == "gadi.nci.org.au"
-        assert gadi.gpu_type == "V100"
+        assert gadi.gpu_type == "H200"
         assert len(gadi.checks) == 4
 
     def test_raises_on_missing_file(self, tmp_path):
@@ -241,20 +241,43 @@ class TestStageContainerImage:
 
 
 class TestGenerateHpcEnv:
-    def test_gpuvolta_config(self):
-        result = generate_hpc_env("gpuvolta")
-        assert 'export VLLM_MODEL="google/gemma-4-31B-it"' in result
-        assert 'export VLLM_TP="4"' in result
-        assert 'export VLLM_GPU_MEM="0.90"' in result
-        assert 'export VLLM_MAX_SEQS="64"' in result
-        assert result.startswith("#!/usr/bin/env bash\n")
-
     def test_gpuhopper_config(self):
         result = generate_hpc_env("gpuhopper")
         assert 'export VLLM_MODEL="openai/gpt-oss-120b"' in result
         assert 'export VLLM_TP="4"' in result
         assert 'export VLLM_GPU_MEM="0.92"' in result
         assert 'export VLLM_MAX_SEQS="384"' in result
+
+    def test_gpuhopper_uses_openai_gptoss_reasoning_parser(self):
+        """gpt-oss-120b needs --reasoning-parser openai_gptoss (vLLM nightly registry)."""
+        result = generate_hpc_env("gpuhopper")
+        assert 'export VLLM_REASONING_PARSER="openai_gptoss"' in result
+
+    def test_gpuhopper_qwen3_config(self):
+        result = generate_hpc_env("gpuhopper-qwen3")
+        assert 'export VLLM_MODEL="Qwen/Qwen3.6-35B-A3B"' in result
+        assert 'export VLLM_TP="4"' in result
+        assert 'export VLLM_REASONING_PARSER="qwen3"' in result
+        assert 'export VLLM_LANGUAGE_MODEL_ONLY="1"' in result
+
+    def test_gpuhopper_gemma4_config(self):
+        result = generate_hpc_env("gpuhopper-gemma4")
+        assert 'export VLLM_MODEL="google/gemma-4-31B-it"' in result
+        assert 'export VLLM_TP="4"' in result
+        assert 'export VLLM_REASONING_PARSER="gemma4"' in result
+        assert 'export VLLM_LANGUAGE_MODEL_ONLY="1"' in result
+
+    def test_gpuhopper_qwen3_and_gemma4_route_to_gpuhopper_pbs_queue(self):
+        from llm_discovery.platform import resolve_pbs_queue
+        assert resolve_pbs_queue("gpuhopper-qwen3") == "gpuhopper"
+        assert resolve_pbs_queue("gpuhopper-gemma4") == "gpuhopper"
+
+    def test_volta_queues_removed(self):
+        """gpuvolta* removed — CUDA too old on NCI Volta nodes for current vLLM."""
+        with pytest.raises(ValueError, match="Unknown GPU queue"):
+            generate_hpc_env("gpuvolta")
+        with pytest.raises(ValueError, match="Unknown GPU queue"):
+            generate_hpc_env("gpuvolta-e4b")
 
     def test_unknown_queue_raises(self):
         with pytest.raises(ValueError, match="Unknown GPU queue"):
@@ -406,7 +429,7 @@ class TestDeploy:
                     "deploy",
                     "--platform", "gadi",
                     "--project", "ab12",
-                    "--gpu-queue", "gpuvolta",
+                    "--gpu-queue", "gpuhopper-gemma4",
                     "--container-image", str(sif),
                     "--data-dir", str(data_dir),
                 ],
@@ -474,9 +497,13 @@ class TestGetGpuQueueConfig:
         assert config["VLLM_MODEL"] == "openai/gpt-oss-120b"
         assert config["VLLM_TP"] == "4"
 
-    def test_gpuvolta_returns_config(self):
-        config = get_gpu_queue_config("gpuvolta")
+    def test_gpuhopper_gemma4_returns_config(self):
+        config = get_gpu_queue_config("gpuhopper-gemma4")
         assert config["VLLM_MODEL"] == "google/gemma-4-31B-it"
+
+    def test_gpuhopper_qwen3_returns_config(self):
+        config = get_gpu_queue_config("gpuhopper-qwen3")
+        assert config["VLLM_MODEL"] == "Qwen/Qwen3.6-35B-A3B"
 
     def test_unknown_queue_raises(self):
         with pytest.raises(ValueError, match="Unknown GPU queue"):
@@ -498,7 +525,7 @@ class TestUploadModelCache:
             gpu_type="V100",
             submission="pbs",
         )
-        upload_model_cache(platform, "ab12", "gpuvolta")
+        upload_model_cache(platform, "ab12", "gpuhopper-gemma4")
 
         rsync_args = mock_run.call_args[0][0]
         assert "rsync" in rsync_args[0]
@@ -522,7 +549,7 @@ class TestUploadModelCache:
             gpu_type="V100",
             submission="pbs",
         )
-        upload_model_cache(platform, "ab12", "gpuvolta")
+        upload_model_cache(platform, "ab12", "gpuhopper-gemma4")
 
         rsync_args = mock_run.call_args[0][0]
         assert str(model_dir) in rsync_args
@@ -545,7 +572,7 @@ class TestUploadModelCache:
             gpu_type="V100",
             submission="pbs",
         )
-        upload_model_cache(platform, "ab12", "gpuvolta")
+        upload_model_cache(platform, "ab12", "gpuhopper-gemma4")
 
         rsync_args = mock_run.call_args[0][0]
         assert str(model_dir) in rsync_args
@@ -563,7 +590,7 @@ class TestUploadModelCache:
             submission="pbs",
         )
         with pytest.raises(FileNotFoundError, match="Download first"):
-            upload_model_cache(platform, "ab12", "gpuvolta")
+            upload_model_cache(platform, "ab12", "gpuhopper-gemma4")
 
     def test_no_cache_dir_raises(self, tmp_path, monkeypatch):
         """AC2.4: No HF cache at all raises FileNotFoundError."""
@@ -580,7 +607,7 @@ class TestUploadModelCache:
             submission="pbs",
         )
         with pytest.raises(FileNotFoundError, match="No HuggingFace cache"):
-            upload_model_cache(platform, "ab12", "gpuvolta")
+            upload_model_cache(platform, "ab12", "gpuhopper-gemma4")
 
 
 class TestSubmitPingJob:
@@ -606,7 +633,7 @@ class TestSubmitPingJob:
         job_id = submit_ping_job(
             platform,
             "ab12",
-            "gpuvolta",
+            "gpuhopper-gemma4",
             "/scratch/ab12/containers/pipeline.sif",
         )
 
@@ -615,7 +642,7 @@ class TestSubmitPingJob:
         # Verify template substitution via the put call
         put_call = mock_conn.put.call_args
         uploaded_content = put_call[0][0].read()
-        assert "gpuvolta" in uploaded_content
+        assert "gpuhopper" in uploaded_content
         assert "ab12" in uploaded_content
         assert "/scratch/ab12/containers/pipeline.sif" in uploaded_content
         assert "{{GPU_QUEUE}}" not in uploaded_content

@@ -6,8 +6,8 @@ platforms:
     display_name: "NCI Gadi"
     ssh_host: "gadi.nci.org.au"
     remote_base: "/scratch/{project}/llm-discovery"
-    gpu_queue: "gpuvolta"
-    gpu_type: "V100"
+    gpu_queue: "gpuhopper"
+    gpu_type: "H200"
     submission: "pbs"
     modules:
       - "cuda/12.0"

@@ -176,7 +176,7 @@ def _wait_for_ping(
 @app.command(name="download-model")
 def download_model(
     gpu_queue: str = typer.Option(
-        "gpuvolta", help="GPU queue config to resolve model name from"
+        "gpuhopper", help="GPU queue config to resolve model name from"
     ),
 ) -> None:
     """Download model weights to local HF cache (for later rsync to HPC)."""
@@ -203,7 +203,7 @@ def init(
     platform: str = typer.Option(..., help="HPC platform: gadi"),
     project: str = typer.Option(..., help="NCI project code"),
     gpu_queue: str = typer.Option(
-        "gpuvolta", help="Gadi GPU queue: gpuhopper or gpuvolta"
+        "gpuhopper", help="Gadi GPU queue: gpuhopper, gpuhopper-gemma4, gpuhopper-qwen3, gpuhopper-oss20b"
     ),
     container_image: Path = typer.Option(
         "pipeline.sif", help="Path to local .sif container image"
@@ -484,7 +484,7 @@ def deploy(
     platform: str = typer.Option(..., help="HPC platform: gadi or ucloud"),
     project: str = typer.Option(None, help="NCI project code (for Gadi)"),
     gpu_queue: str = typer.Option(
-        "gpuhopper", help="Gadi GPU queue: gpuhopper or gpuvolta"
+        "gpuhopper", help="Gadi GPU queue: gpuhopper, gpuhopper-gemma4, gpuhopper-qwen3, gpuhopper-oss20b"
     ),
     container_image: str = typer.Option(
         "pipeline.sif", help="Path to local .sif container image"
@@ -826,7 +826,7 @@ def run(
     platform: str = typer.Option("local", help="Platform: gadi, ucloud, or local"),
     project: str = typer.Option(None, help="NCI project code (for Gadi)"),
     gpu_queue: str = typer.Option(
-        "gpuhopper", help="Gadi GPU queue: gpuhopper or gpuvolta"
+        "gpuhopper", help="Gadi GPU queue: gpuhopper, gpuhopper-gemma4, gpuhopper-qwen3, gpuhopper-oss20b"
     ),
     yes: bool = typer.Option(
         False,

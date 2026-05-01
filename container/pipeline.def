@@ -17,6 +17,7 @@ From: vllm/vllm-openai:v0.19.0
     pyproject.toml /opt/llm-discovery/pyproject.toml
     README.md /opt/llm-discovery/README.md
     container/entrypoint.sh /opt/llm-discovery/container/entrypoint.sh
+    container/lib_vllm_cmd.sh /opt/llm-discovery/container/lib_vllm_cmd.sh
 
 %post
     # Install llm-discovery on top of vLLM's existing environment.

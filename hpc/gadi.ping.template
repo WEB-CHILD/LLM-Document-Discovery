@@ -28,26 +28,21 @@ CONTAINER_PATH="{{CONTAINER_PATH}}"
 export VLLM_CACHE_ROOT="${PBS_JOBFS}/vllm_cache"
 export TORCHINDUCTOR_CACHE_DIR="${PBS_JOBFS}/torchinductor"
 
-# Source GPU config for model name and TP
+# Source GPU config for host-side echo
 source "${DATA_DIR}/hpc_env.sh"
 
 echo "=== PING TEST ==="
-echo "Model: ${VLLM_MODEL}"
-echo "Container: ${CONTAINER_PATH}"
+echo "Model:             ${VLLM_MODEL}"
+echo "Container:         ${CONTAINER_PATH}"
+echo "Reasoning parser:  ${VLLM_REASONING_PARSER:-none}"
+echo "Language-model-only: ${VLLM_LANGUAGE_MODEL_ONLY:-0}"
+echo "Max model len:     ${VLLM_MAX_MODEL_LEN:-default}"
 
-# Build vLLM serve command
-VLLM_CMD="vllm serve ${VLLM_MODEL} \
-    --tensor-parallel-size ${VLLM_TP} \
-    --gpu-memory-utilization ${VLLM_GPU_MEM} \
-    --port 8000"
-
-if [ -n "${VLLM_DP:-}" ] && [ "$VLLM_DP" -gt 1 ] 2>/dev/null; then
-    VLLM_CMD="${VLLM_CMD} --data-parallel-size ${VLLM_DP}"
-fi
-
-echo "Command: ${VLLM_CMD}"
-
-# Start vLLM inside container in background
+# Start vLLM inside container using lib_vllm_cmd.sh so the ping measures
+# production flags (reasoning-parser, language-model-only, etc.) — NOT a
+# stripped-down command that would over-report KV-cache headroom.
+# The "Maximum concurrency for N tokens per request: X.XXx" line in vLLM
+# startup logs is the authoritative sizing measurement.
 singularity exec --nv \
     --bind "${DATA_DIR}:/data" \
     --bind "${HF_CACHE}:/model_cache" \
@@ -55,7 +50,13 @@ singularity exec --nv \
     --env VLLM_CACHE_ROOT="${VLLM_CACHE_ROOT}" \
     --env TORCHINDUCTOR_CACHE_DIR="${TORCHINDUCTOR_CACHE_DIR}" \
     "${CONTAINER_PATH}" \
-    bash -c "${VLLM_CMD}" &
+    bash -c '
+        source /data/hpc_env.sh
+        source /opt/llm-discovery/container/lib_vllm_cmd.sh
+        mapfile -t CMD < <(build_vllm_cmd)
+        echo "Command: ${CMD[*]}"
+        exec "${CMD[@]}"
+    ' &
 
 VLLM_PID=$!
 

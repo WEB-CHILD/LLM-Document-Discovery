@@ -56,17 +56,17 @@ class TestInitCommand:
 
         result = runner.invoke(app, [
             "init", "--platform", "gadi", "--project", "ab12",
-            "--gpu-queue", "gpuvolta", "--container-image", str(sif)
+            "--gpu-queue", "gpuhopper-gemma4", "--container-image", str(sif)
         ])
 
         assert result.exit_code == 0, f"Output:\n{result.output}"
 
         # Verify all four platform functions were called with correct args
         mock_stage.assert_called_once_with(mock_config, "ab12", sif)
-        mock_env.assert_called_once_with(mock_config, "ab12", "gpuvolta")
-        mock_model.assert_called_once_with(mock_config, "ab12", "gpuvolta")
+        mock_env.assert_called_once_with(mock_config, "ab12", "gpuhopper-gemma4")
+        mock_model.assert_called_once_with(mock_config, "ab12", "gpuhopper-gemma4")
         mock_ping.assert_called_once_with(
-            mock_config, "ab12", "gpuvolta", "/scratch/ab12/containers/pipeline.sif"
+            mock_config, "ab12", "gpuhopper-gemma4", "/scratch/ab12/containers/pipeline.sif"
         )
 
         # Verify call order: stage -> env -> model -> ping

@@ -2,7 +2,7 @@
 
 Reproducible pipeline for classifying historical web documents (1996-2005) using LLMs on GPU hardware (local RTX 4090 or NCI Gadi HPC).
 
-Freshness: 2026-04-15
+Freshness: 2026-04-17
 
 ## Purpose
 
@@ -37,7 +37,7 @@ Stages 1-3 run on the host. Stages 4-5 run inside the container (orchestrated by
 - Bind mount: `<data-dir>:/data` containing `hpc_env.sh`, `corpus.db`, `system_prompt.txt`, `prompts/`, `out/`
 - Bind mount: `<hf-cache>:/model_cache` with `HF_HOME=/model_cache`
 - `hpc_env.sh` must export: `VLLM_MODEL`, `VLLM_TP`, `VLLM_GPU_MEM`, `VLLM_MAX_SEQS`
-- Optional: `VLLM_PORT` (default 8000), `VLLM_MAX_MODEL_LEN`, `VLLM_DP`
+- Optional: `VLLM_PORT` (default 8000), `VLLM_MAX_MODEL_LEN`, `VLLM_DP`, `VLLM_REASONING_PARSER` (qwen3/gemma4/openai_gptoss/...), `VLLM_LANGUAGE_MODEL_ONLY` (1 to skip vision encoder and free KV cache)
 - EXIT trap always fires to kill the vLLM background process
 
 ## Contracts
@@ -66,7 +66,7 @@ Entry point: `llm-discovery` (Typer app).
 
 `PlatformConfig` model fields: `display_name`, `ssh_host`, `remote_base`, `gpu_type`, `gpu_queue`, `submission`, `container_image`, `modules`, `checks`.
 
-GPU queue configs are in `_GPU_QUEUE_CONFIGS` dict. Known queues: `gpuhopper`, `gpuvolta`, `gpuvolta-e4b`, `gpuhopper-oss20b`, `RTX4090-e4b`, `RTX4090-oss20b`. Each maps to a model, TP size, GPU memory utilization, and max sequences.
+GPU queue configs are in `_GPU_QUEUE_CONFIGS` dict. Known queues: `gpuhopper` (gpt-oss-120b), `gpuhopper-gemma4` (gemma-4-31B-it), `gpuhopper-qwen3` (Qwen3.6-35B-A3B), `gpuhopper-oss20b`, `RTX4090-e4b`, `RTX4090-oss20b`. Each maps to a model, TP size, GPU memory utilization, max sequences, and (for models with registered vLLM parsers) a reasoning-parser name. Gadi Volta queues are not supported — CUDA too old.
 
 Key platform functions:
 - `stage_container_image(platform, project, local_sif) -> str` -- rsync .sif to `/scratch/{project}/containers/`, verify SHA256 post-transfer

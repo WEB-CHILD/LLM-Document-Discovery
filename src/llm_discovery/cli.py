@@ -405,6 +405,111 @@ def import_results_cmd(
     run_import(db, input_dir)
 
 
+@app.command()
+def verify(
+    db: Path = typer.Option("corpus.db", help="Corpus database to verify"),
+    threshold: float = typer.Option(
+        70.0, help="rapidfuzz partial-ratio (0-100) for a grounded quote"
+    ),
+    workers: int = typer.Option(
+        0, help="Parallel workers (0 = auto: CPU count minus two)"
+    ),
+) -> None:
+    """Check that every extracted blockquote appears in its source document.
+
+    Reports, per category, the share of quotes present in the source (grounded)
+    and the share absent even after all formatting is stripped (genuine mismatch).
+    """
+    import os
+
+    from rich.table import Table
+
+    from llm_discovery.provenance import verify_corpus
+
+    if not db.exists():
+        rprint(f"[red]Error: database not found: {db}[/red]")
+        raise typer.Exit(1)
+    if workers <= 0:
+        workers = max(1, (os.cpu_count() or 2) - 2)
+
+    rprint(f"Verifying blockquotes in [bold]{db}[/bold] (workers={workers})...")
+    report = verify_corpus(db, threshold=threshold, workers=workers)
+
+    table = Table(title="Blockquote provenance (Axis 1)")
+    table.add_column("id", justify="right")
+    table.add_column("category")
+    table.add_column("quotes", justify="right")
+    table.add_column("grounded", justify="right")
+    table.add_column("genuine", justify="right")
+    for cat in report.categories:
+        table.add_row(
+            str(cat.category_id),
+            cat.category_name,
+            f"{cat.total:,}",
+            f"{cat.grounded_pct:.1f}%",
+            f"{cat.genuine_pct:.3f}%",
+        )
+    grounded_pct = 100 * report.grounded / report.total if report.total else 0.0
+    genuine_pct = 100 * report.genuine / report.total if report.total else 0.0
+    table.add_section()
+    table.add_row(
+        "",
+        "[bold]total[/bold]",
+        f"[bold]{report.total:,}[/bold]",
+        f"[bold]{grounded_pct:.1f}%[/bold]",
+        f"[bold]{genuine_pct:.3f}%[/bold]",
+    )
+    rprint(table)
+
+
+@app.command()
+def probe(
+    db: Path = typer.Option("corpus.db", help="Corpus database to check"),
+    workers: int = typer.Option(
+        0, help="Parallel workers (0 = auto: CPU count minus two)"
+    ),
+    sample: int = typer.Option(
+        40, help="Flagged verdicts to retain per category for reading"
+    ),
+) -> None:
+    """Flag positive verdicts whose cited evidence lacks the category's feature.
+
+    For the six categories defined by a surface property, reports the share of
+    positive verdicts whose quotes contain none of the category's necessary forms
+    (candidate false positives), and how many cited no quote at all.
+    """
+    import os
+
+    from rich.table import Table
+
+    from llm_discovery.literal import flag_false_positives
+
+    if not db.exists():
+        rprint(f"[red]Error: database not found: {db}[/red]")
+        raise typer.Exit(1)
+    if workers <= 0:
+        workers = max(1, (os.cpu_count() or 2) - 2)
+
+    rprint(f"Checking positive verdicts in [bold]{db}[/bold] (workers={workers})...")
+    report = flag_false_positives(db, workers=workers, sample_size=sample)
+
+    table = Table(title="Positive-classification check (Axis 2)")
+    table.add_column("id", justify="right")
+    table.add_column("category")
+    table.add_column("positives", justify="right")
+    table.add_column("flagged", justify="right")
+    table.add_column("no quote", justify="right")
+    for cat in report.categories:
+        table.add_row(
+            str(cat.category_id),
+            cat.category_name,
+            f"{cat.total:,}",
+            f"{cat.flagged:,} ({cat.rate:.1f}%)",
+            f"{cat.no_quote:,}",
+        )
+    rprint(table)
+
+
 def _ensure_validated(platform_name: str, project: str | None) -> bool:
     """Run validation for a platform. Returns True if all checks pass."""
     from llm_discovery.platform import (

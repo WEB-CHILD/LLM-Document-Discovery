@@ -1,4 +1,4 @@
-"""Provenance verification for extracted blockquotes (faithfulness Axis 1).
+"""Block quote validation (faithfulness Axis 1).
 
 Every blockquote the model returns should appear in the document it was drawn
 from. Each quote is matched against its source with a whitespace- and
@@ -10,7 +10,7 @@ the page (``GENUINE``).
 The pure matching and classification functions are separated from the database
 iteration (``verify_corpus``) so the classifier can be property-tested without a
 database. Built for the validation section of the WEBCHILD document-discovery
-paper; see ``docs/provenance-validation.md``.
+paper; see ``docs/blockquote-validation.md``.
 """
 
 from __future__ import annotations

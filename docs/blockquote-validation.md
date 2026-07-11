@@ -1,10 +1,10 @@
-# Faithfulness validation and pipeline appendix
+# Block quote validation and pipeline appendix
 
 Draft prose and table for the article's "last iteration" results section and its
 methods appendix. Numbers are produced by `llm-discovery verify` over the full
 Kidlink classification database (GPT-OSS-120b, 1,633,180 extracted quotations).
 
-## Validation results (provenance of extracted quotations)
+## Validation results (block quote validation)
 
 The model was instructed to extract text exactly as it appeared and to make no
 judgement about its meaning. This lets us check the result automatically, because a
@@ -93,7 +93,7 @@ database.
    shutdown. All inference runs at temperature zero for reproducibility.
 5. **import-results.** The JSON result files are read into the database
    idempotently, so a re-run after interruption never duplicates a result.
-6. **verify.** The provenance audit, checking each extracted blockquote against the
+6. **verify.** The block quote validation, checking each extracted blockquote against the
    document it came from. It is described at the end of this appendix.
 
 ### Running it on a supercomputer
@@ -137,7 +137,7 @@ quotation and the source to lowercase alphanumerics, with accents and Nordic let
 folded, and asks whether the quotation's content is still present. A quotation that
 reappears differed from the source only in presentation, and one that does not is a
 genuine mismatch. The matching and classification live in one module,
-`provenance.py`, separate from the database iteration so they can be tested
+`blockquote_validation.py`, separate from the database iteration so they can be tested
 directly, and the test suite covers the matching, the formatting-strip recovery, and
 the per-category tally. To reproduce the table above, run
 `uv run llm-discovery verify --db corpus.db`. The full corpus of 1.6 million

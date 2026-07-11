@@ -6,7 +6,7 @@ Kidlink classification database (GPT-OSS-120b).
 
 ## What we can and cannot check automatically
 
-The provenance audit checked that the model quoted faithfully, a question with a
+The block quote validation checked that the model quoted faithfully, a question with a
 definite answer because a quotation either appears on its page or it does not.
 Whether a classification is correct has no such answer without a human-coded gold
 standard, and the study does not build one. We can still put one narrower

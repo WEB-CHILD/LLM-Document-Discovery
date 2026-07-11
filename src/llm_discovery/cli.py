@@ -424,7 +424,7 @@ def verify(
 
     from rich.table import Table
 
-    from llm_discovery.provenance import verify_corpus
+    from llm_discovery.blockquote_validation import verify_corpus
 
     if not db.exists():
         rprint(f"[red]Error: database not found: {db}[/red]")
@@ -435,7 +435,7 @@ def verify(
     rprint(f"Verifying blockquotes in [bold]{db}[/bold] (workers={workers})...")
     report = verify_corpus(db, threshold=threshold, workers=workers)
 
-    table = Table(title="Blockquote provenance (Axis 1)")
+    table = Table(title="Block quote validation (Axis 1)")
     table.add_column("id", justify="right")
     table.add_column("category")
     table.add_column("quotes", justify="right")

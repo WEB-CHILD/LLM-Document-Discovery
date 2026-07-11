@@ -1,9 +1,8 @@
-"""Tests for the blockquote provenance verifier."""
+"""Tests for the block quote validator."""
 
 import sqlite3
 
-from llm_discovery.prep_db import sync_categories, sync_documents
-from llm_discovery.provenance import (
+from llm_discovery.blockquote_validation import (
     Verdict,
     classify_blockquote,
     grounding_ratio,
@@ -13,6 +12,7 @@ from llm_discovery.provenance import (
     verify_corpus,
     words,
 )
+from llm_discovery.prep_db import sync_categories, sync_documents
 
 SOURCE = (
     "This is a forum for kids aged 10-15 to discuss topics. "

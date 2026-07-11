@@ -36,3 +36,6 @@ htmlcov/
 # IDE
 .vscode/
 .idea/
+
+# pipeline run output (may contain corpus text; keep local)
+out/

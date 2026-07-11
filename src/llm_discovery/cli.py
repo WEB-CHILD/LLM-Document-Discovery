@@ -176,7 +176,7 @@ def _wait_for_ping(
 @app.command(name="download-model")
 def download_model(
     gpu_queue: str = typer.Option(
-        "gpuvolta", help="GPU queue config to resolve model name from"
+        "gpuhopper", help="GPU queue config to resolve model name from"
     ),
 ) -> None:
     """Download model weights to local HF cache (for later rsync to HPC)."""
@@ -203,7 +203,7 @@ def init(
     platform: str = typer.Option(..., help="HPC platform: gadi"),
     project: str = typer.Option(..., help="NCI project code"),
     gpu_queue: str = typer.Option(
-        "gpuvolta", help="Gadi GPU queue: gpuhopper or gpuvolta"
+        "gpuhopper", help="Gadi GPU queue: gpuhopper, gpuhopper-gemma4, gpuhopper-qwen3, gpuhopper-oss20b"
     ),
     container_image: Path = typer.Option(
         "pipeline.sif", help="Path to local .sif container image"
@@ -357,23 +357,36 @@ def process(
     concurrency: int = typer.Option(..., help="Number of concurrent workers (match VLLM_MAX_SEQS)"),
     limit: int = typer.Option(None, help="Limit number of pairs to process"),
     model: str = typer.Option("openai/gpt-oss-120b", help="Model name"),
+    system_prompt: Path = typer.Option(
+        "system_prompt.txt",
+        "--system-prompt",
+        help="System prompt file (loaded verbatim as the system role)",
+    ),
+    prompts_dir: Path = typer.Option(
+        "prompts",
+        "--prompts-dir",
+        help="Directory containing category *.yaml prompt definitions",
+    ),
 ) -> None:
     """Run LLM classification on unprocessed document-category pairs."""
     if not db.exists():
         rprint(f"[red]Error: database not found: {db}[/red]")
         raise typer.Exit(1)
-    system_prompt_path = Path("system_prompt.txt")
-    if not system_prompt_path.exists():
-        rprint("[red]Error: system_prompt.txt not found[/red]")
+    if not system_prompt.exists():
+        rprint(f"[red]Error: system prompt not found: {system_prompt}[/red]")
+        raise typer.Exit(1)
+    if not prompts_dir.exists():
+        rprint(f"[red]Error: prompts directory not found: {prompts_dir}[/red]")
         raise typer.Exit(1)
     run_processor(
         db_path=db,
         output_dir=output_dir,
         server_url=server_url,
-        system_prompt_path=system_prompt_path,
+        system_prompt_path=system_prompt,
         concurrency=concurrency,
         limit=limit,
         model=model,
+        prompts_dir=prompts_dir,
     )
 
 
@@ -390,6 +403,111 @@ def import_results_cmd(
         rprint(f"[red]Error: input directory not found: {input_dir}[/red]")
         raise typer.Exit(1)
     run_import(db, input_dir)
+
+
+@app.command()
+def verify(
+    db: Path = typer.Option("corpus.db", help="Corpus database to verify"),
+    threshold: float = typer.Option(
+        70.0, help="rapidfuzz partial-ratio (0-100) for a grounded quote"
+    ),
+    workers: int = typer.Option(
+        0, help="Parallel workers (0 = auto: CPU count minus two)"
+    ),
+) -> None:
+    """Check that every extracted blockquote appears in its source document.
+
+    Reports, per category, the share of quotes present in the source (grounded)
+    and the share absent even after all formatting is stripped (genuine mismatch).
+    """
+    import os
+
+    from rich.table import Table
+
+    from llm_discovery.provenance import verify_corpus
+
+    if not db.exists():
+        rprint(f"[red]Error: database not found: {db}[/red]")
+        raise typer.Exit(1)
+    if workers <= 0:
+        workers = max(1, (os.cpu_count() or 2) - 2)
+
+    rprint(f"Verifying blockquotes in [bold]{db}[/bold] (workers={workers})...")
+    report = verify_corpus(db, threshold=threshold, workers=workers)
+
+    table = Table(title="Blockquote provenance (Axis 1)")
+    table.add_column("id", justify="right")
+    table.add_column("category")
+    table.add_column("quotes", justify="right")
+    table.add_column("grounded", justify="right")
+    table.add_column("genuine", justify="right")
+    for cat in report.categories:
+        table.add_row(
+            str(cat.category_id),
+            cat.category_name,
+            f"{cat.total:,}",
+            f"{cat.grounded_pct:.1f}%",
+            f"{cat.genuine_pct:.3f}%",
+        )
+    grounded_pct = 100 * report.grounded / report.total if report.total else 0.0
+    genuine_pct = 100 * report.genuine / report.total if report.total else 0.0
+    table.add_section()
+    table.add_row(
+        "",
+        "[bold]total[/bold]",
+        f"[bold]{report.total:,}[/bold]",
+        f"[bold]{grounded_pct:.1f}%[/bold]",
+        f"[bold]{genuine_pct:.3f}%[/bold]",
+    )
+    rprint(table)
+
+
+@app.command()
+def probe(
+    db: Path = typer.Option("corpus.db", help="Corpus database to check"),
+    workers: int = typer.Option(
+        0, help="Parallel workers (0 = auto: CPU count minus two)"
+    ),
+    sample: int = typer.Option(
+        40, help="Flagged verdicts to retain per category for reading"
+    ),
+) -> None:
+    """Flag positive verdicts whose cited evidence lacks the category's feature.
+
+    For the six categories defined by a surface property, reports the share of
+    positive verdicts whose quotes contain none of the category's necessary forms
+    (candidate false positives), and how many cited no quote at all.
+    """
+    import os
+
+    from rich.table import Table
+
+    from llm_discovery.literal import flag_false_positives
+
+    if not db.exists():
+        rprint(f"[red]Error: database not found: {db}[/red]")
+        raise typer.Exit(1)
+    if workers <= 0:
+        workers = max(1, (os.cpu_count() or 2) - 2)
+
+    rprint(f"Checking positive verdicts in [bold]{db}[/bold] (workers={workers})...")
+    report = flag_false_positives(db, workers=workers, sample_size=sample)
+
+    table = Table(title="Positive-classification check (Axis 2)")
+    table.add_column("id", justify="right")
+    table.add_column("category")
+    table.add_column("positives", justify="right")
+    table.add_column("flagged", justify="right")
+    table.add_column("no quote", justify="right")
+    for cat in report.categories:
+        table.add_row(
+            str(cat.category_id),
+            cat.category_name,
+            f"{cat.total:,}",
+            f"{cat.flagged:,} ({cat.rate:.1f}%)",
+            f"{cat.no_quote:,}",
+        )
+    rprint(table)
 
 
 def _ensure_validated(platform_name: str, project: str | None) -> bool:
@@ -471,7 +589,7 @@ def deploy(
     platform: str = typer.Option(..., help="HPC platform: gadi or ucloud"),
     project: str = typer.Option(None, help="NCI project code (for Gadi)"),
     gpu_queue: str = typer.Option(
-        "gpuhopper", help="Gadi GPU queue: gpuhopper or gpuvolta"
+        "gpuhopper", help="Gadi GPU queue: gpuhopper, gpuhopper-gemma4, gpuhopper-qwen3, gpuhopper-oss20b"
     ),
     container_image: str = typer.Option(
         "pipeline.sif", help="Path to local .sif container image"
@@ -813,7 +931,7 @@ def run(
     platform: str = typer.Option("local", help="Platform: gadi, ucloud, or local"),
     project: str = typer.Option(None, help="NCI project code (for Gadi)"),
     gpu_queue: str = typer.Option(
-        "gpuhopper", help="Gadi GPU queue: gpuhopper or gpuvolta"
+        "gpuhopper", help="Gadi GPU queue: gpuhopper, gpuhopper-gemma4, gpuhopper-qwen3, gpuhopper-oss20b"
     ),
     yes: bool = typer.Option(
         False,

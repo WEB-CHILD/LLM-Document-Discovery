@@ -20,7 +20,9 @@
 #     runs as the calling user, not root, so $HOME differs from the Docker base.
 #
 # Required env vars (set in hpc_env.sh): VLLM_MODEL, VLLM_TP, VLLM_GPU_MEM, VLLM_MAX_SEQS
-# Optional: VLLM_PORT (default: 8000), VLLM_MAX_MODEL_LEN
+# Optional: VLLM_PORT (default 8000), VLLM_MAX_MODEL_LEN, VLLM_DP,
+#           VLLM_REASONING_PARSER (qwen3|gemma4|openai_gptoss|...),
+#           VLLM_LANGUAGE_MODEL_ONLY (1 to free multimodal KV cache)
 
 # Do NOT set -e — EXIT trap MUST always fire for server cleanup
 # (matches scripts/process_corpus.sh design decision)
@@ -32,6 +34,11 @@ if [ ! -f /data/hpc_env.sh ]; then
 fi
 # shellcheck source=/dev/null
 source /data/hpc_env.sh
+
+# Load the vllm-cmd helper (lives alongside this script in /opt/llm-discovery/container/)
+_ENTRYPOINT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "$_ENTRYPOINT_DIR/lib_vllm_cmd.sh"
 
 # --- 2. Validate required env vars (pattern from scripts/start_server.sh) ---
 for var in VLLM_MODEL VLLM_TP VLLM_GPU_MEM VLLM_MAX_SEQS; do
@@ -52,24 +59,12 @@ echo "Tensor parallel:    $VLLM_TP"
 echo "GPU memory util:    $VLLM_GPU_MEM"
 echo "Max sequences:      $VLLM_MAX_SEQS"
 echo "Max model len:      ${VLLM_MAX_MODEL_LEN:-default}"
+echo "Reasoning parser:   ${VLLM_REASONING_PARSER:-none}"
+echo "Language-model-only:${VLLM_LANGUAGE_MODEL_ONLY:-0}"
 echo ""
 
-# --- 3. Build vllm serve command (pattern from scripts/start_server.sh) ---
-CMD=(vllm serve "$VLLM_MODEL"
-    --tensor-parallel-size "$VLLM_TP"
-    --gpu-memory-utilization "$VLLM_GPU_MEM"
-    --max-num-seqs "$VLLM_MAX_SEQS"
-    --port "$VLLM_PORT"
-    --trust-remote-code
-)
-
-if [ -n "${VLLM_MAX_MODEL_LEN:-}" ]; then
-    CMD+=(--max-model-len "$VLLM_MAX_MODEL_LEN")
-fi
-
-if [ -n "${VLLM_DP:-}" ] && [ "$VLLM_DP" -gt 1 ] 2>/dev/null; then
-    CMD+=(--data-parallel-size "$VLLM_DP")
-fi
+# --- 3. Build vllm serve command via lib_vllm_cmd.sh::build_vllm_cmd ---
+mapfile -t CMD < <(build_vllm_cmd)
 
 # --- 4. Launch vLLM as background process, log to /data/out/ ---
 mkdir -p /data/out

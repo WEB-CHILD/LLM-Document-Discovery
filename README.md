@@ -96,7 +96,7 @@ See [docs/testing-plan-local-4090.md](docs/testing-plan-local-4090.md) for the f
 | `fetch`          | Download pages from Internet Archive, convert to markdown |
 | `prep-db`        | Create and populate corpus database from documents/prompts |
 | `preflight`      | Validate documents in corpus database                     |
-| `process`        | Run LLM classification on document-category pairs         |
+| `process`        | Run LLM classification on document-category pairs (`--system-prompt PATH` and `--prompts-dir PATH` override the default `system_prompt.txt` / `prompts/` locations) |
 | `import-results` | Import JSON result files into corpus database             |
 | `validate`       | Check remote HPC environment readiness                    |
 | `deploy`         | Sync code/data to HPC and submit job                     |

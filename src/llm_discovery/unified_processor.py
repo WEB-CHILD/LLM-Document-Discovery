@@ -24,6 +24,8 @@ from typing import Any
 
 import yaml
 from rich.console import Console
+
+from llm_discovery.model_profiles import resolve_profile
 from rich.panel import Panel
 from rich.progress import (
     BarColumn,
@@ -137,7 +139,11 @@ def parse_response(
             reason = f"Missing 'match' field: {category_result}"
         return None, reason
 
-    reasoning = message.get("reasoning_content", "") or extract_reasoning(content)
+    reasoning = (
+        message.get("reasoning_content")
+        or message.get("reasoning")
+        or extract_reasoning(content)
+    )
     return {
         "result_id": result_id,
         "category_id": category_id,
@@ -203,11 +209,11 @@ Explain your reasoning in 1-2 sentences. Then respond with JSON. Do not use a fe
 {{"match": "yes" or "maybe" or "no", "blockquotes": ["verbatim quote 1", "verbatim quote 2"]}}""",
         },
     ]
+    profile = resolve_profile(model)
     return custom_id, {
         "model": model,
         "messages": messages,
-        "temperature": 0.0,
-        "max_tokens": 32000,
+        **profile.body,
     }
 
 

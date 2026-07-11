@@ -2,7 +2,7 @@
 
 Reproducible pipeline for classifying historical web documents (1996-2005) using LLMs on GPU hardware (local RTX 4090 or NCI Gadi HPC).
 
-Freshness: 2026-04-17
+Freshness: 2026-07-11
 
 ## Purpose
 
@@ -61,6 +61,8 @@ Entry point: `llm-discovery` (Typer app).
 | `run` | `--platform`, `--gpu-queue`, `--yes` | End-to-end pipeline; routes to `_run_container_pipeline` for `apptainer` submission or `_run_remote_pipeline` for PBS |
 | `process` | `--db`, `--output-dir`, `--server-url`, `--model`, `--system-prompt`, `--prompts-dir` | Run LLM classification |
 | `import-results` | `--db`, `--input-dir` | Import JSON results into database |
+| `verify` | `--db`, `--threshold`, `--workers` | Block quote validation (Axis 1): check every extracted blockquote appears in its source (`blockquote_validation.py`) |
+| `probe` | `--db` | Literal false-positive tripwire (Axis 2): flag positive verdicts whose cited evidence lacks the category's surface feature (`literal.py`) |
 
 ### Platform Configuration (src/llm_discovery/platform.py)
 

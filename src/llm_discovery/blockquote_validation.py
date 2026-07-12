@@ -34,6 +34,9 @@ DEFAULT_THRESHOLD = 70.0
 _RECOVERY_WORD_OVERLAP = 0.9
 
 _WS = re.compile(r"\s+")
+# A markdown link or image: keep the text/alt, drop the target. The lookbehind
+# skips backslash-escaped brackets, which are literal page text.
+_MD_LINK = re.compile(r"(?<!\\)!?\[([^\]]*)\]\(([^)]*)\)")
 _MD_ESCAPE = re.compile(r"\\(['\[\]\\*_`~#>|!(){}+\-.])")
 _WORD = re.compile(r"[0-9a-z]+")
 _NONALNUM = re.compile(r"[^0-9a-z]+")
@@ -44,10 +47,24 @@ _NORDIC = str.maketrans({"æ": "ae", "ø": "o", "å": "a", "œ": "oe", "ß": "ss
 class Verdict(StrEnum):
     """How a blockquote relates to its source document."""
 
-    EXACT = "exact"  # present verbatim (modulo whitespace and markdown escapes)
+    EXACT = "exact"  # present verbatim (modulo whitespace, escapes, link targets)
     FUZZY = "fuzzy"  # present within the fuzzy threshold
     FORMATTING = "formatting"  # below threshold; recovers once formatting stripped
     GENUINE = "genuine"  # absent even after stripping all formatting and encoding
+
+
+def strip_links(text: str) -> str:
+    """Replace markdown links and images with their text/alt, innermost first.
+
+    URLs are dropped from this variant only; matching always tries the raw text
+    too, because quotes legitimately cite URLs as evidence.
+    """
+    for _ in range(5):  # image-in-link nests one level; cap defends against cycles
+        stripped = _MD_LINK.sub(r"\1", text)
+        if stripped == text:
+            break
+        text = stripped
+    return text
 
 
 def normalise(text: str) -> str:
@@ -71,54 +88,90 @@ def words(text: str) -> list[str]:
     return _WORD.findall(_fold(text))
 
 
-def grounding_ratio(blockquote: str, normalised_source: str) -> float:
-    """Best fuzzy match of the quote in the source, in [0, 100].
+@dataclass(frozen=True)
+class SourceForms:
+    """Matching forms of one source document, derived once per document.
 
-    Quotes may bridge omitted text with an ``[...]`` marker; each part must be
-    found, so the score is the minimum over parts.
+    Every form comes in two variants: raw, and with markdown link targets
+    stripped. A quote is matched against both and the better reading wins, so
+    stripping can recover link-mangled page text without ever un-grounding a
+    quote that cites a URL.
     """
-    fragments = [n for f in blockquote.split(ELLIPSIS) if (n := normalise(f))]
-    if not fragments:
-        return 0.0
-    # Exact substring is the common case and far cheaper than fuzzy alignment.
-    return min(
-        100.0 if f in normalised_source else fuzz.partial_ratio(f, normalised_source)
-        for f in fragments
+
+    normalised: str
+    normalised_stripped: str
+    skeleton: str
+    skeleton_stripped: str
+    words: frozenset[str]
+
+
+def source_forms(source: str) -> SourceForms:
+    """Derive both matching variants of a source document."""
+    stripped = strip_links(source)
+    return SourceForms(
+        normalised=normalise(source),
+        normalised_stripped=normalise(stripped),
+        skeleton=skeleton(source),
+        skeleton_stripped=skeleton(stripped),
+        words=frozenset(words(source)),
     )
 
 
-def recovers_when_stripped(
-    blockquote: str, source_skeleton: str, source_words: set[str]
-) -> bool:
+def _fragment_ratio(fragment: str, normalised_source: str) -> float:
+    # Exact substring is the common case and far cheaper than fuzzy alignment.
+    if fragment in normalised_source:
+        return 100.0
+    return fuzz.partial_ratio(fragment, normalised_source)
+
+
+def grounding_ratio(blockquote: str, forms: SourceForms) -> float:
+    """Best fuzzy match of the quote in the source, in [0, 100].
+
+    Quotes may bridge omitted text with an ``[...]`` marker; each part must be
+    found, so the score is the minimum over parts. Each part scores against the
+    raw source and the link-stripped source, keeping the better reading.
+    """
+    scores = []
+    for f in blockquote.split(ELLIPSIS):
+        raw = normalise(f)
+        if not raw:
+            continue
+        score = _fragment_ratio(raw, forms.normalised)
+        if score < 100:
+            stripped = normalise(strip_links(f))
+            score = max(score, _fragment_ratio(stripped, forms.normalised_stripped))
+        scores.append(score)
+    return min(scores) if scores else 0.0
+
+
+def recovers_when_stripped(blockquote: str, forms: SourceForms) -> bool:
     """True if the quote's content survives once all formatting is removed.
 
-    Either the quote's alphanumeric skeleton is a substring of the source's, or
-    at least 90 per cent of its word tokens appear in the source.
+    The quote's alphanumeric skeleton is a substring of either source skeleton
+    variant, or at least 90 per cent of its word tokens appear in the source.
     """
     bsk = skeleton(blockquote)
-    if not bsk or bsk in source_skeleton:
+    if not bsk or bsk in forms.skeleton:
+        return True
+    if skeleton(strip_links(blockquote)) in forms.skeleton_stripped:
         return True
     tokens = words(blockquote)
     if not tokens:
         return True
-    present = sum(1 for w in tokens if w in source_words)
+    present = sum(1 for w in tokens if w in forms.words)
     return present / len(tokens) >= _RECOVERY_WORD_OVERLAP
 
 
 def classify(
-    blockquote: str,
-    normalised_source: str,
-    source_skeleton: str,
-    source_words: set[str],
-    threshold: float = DEFAULT_THRESHOLD,
+    blockquote: str, forms: SourceForms, threshold: float = DEFAULT_THRESHOLD
 ) -> Verdict:
     """Classify a quote against pre-derived source forms (the hot path)."""
-    ratio = grounding_ratio(blockquote, normalised_source)
+    ratio = grounding_ratio(blockquote, forms)
     if ratio >= 100:  # 100 is rapidfuzz's exact-match score
         return Verdict.EXACT
     if ratio >= threshold:
         return Verdict.FUZZY
-    if recovers_when_stripped(blockquote, source_skeleton, source_words):
+    if recovers_when_stripped(blockquote, forms):
         return Verdict.FORMATTING
     return Verdict.GENUINE
 
@@ -131,9 +184,7 @@ def classify_blockquote(
     Convenience wrapper that derives the matching forms; ``verify_corpus`` derives
     them once per document instead.
     """
-    return classify(
-        blockquote, normalise(source), skeleton(source), set(words(source)), threshold
-    )
+    return classify(blockquote, source_forms(source), threshold)
 
 
 @dataclass
@@ -194,8 +245,7 @@ def _verify_range(
     conn = _ro_connect(db_path)
     out: dict[int, Counter[str]] = {}
     current_rid: int | None = None
-    nsrc = ssk = ""
-    swords: set[str] = set()
+    forms = source_forms("")
     cursor = conn.execute(
         "SELECT result_id, category_id, blockquote FROM result_category_blockquote "
         "WHERE result_id >= ? AND result_id < ? ORDER BY result_id",
@@ -206,12 +256,9 @@ def _verify_range(
             row = conn.execute(
                 "SELECT content FROM result WHERE result_id = ?", (rid,)
             ).fetchone()
-            content = row[0] if row else ""
-            nsrc = normalise(content)
-            ssk = skeleton(content)
-            swords = set(words(content))
+            forms = source_forms(row[0] if row else "")
             current_rid = rid
-        verdict = classify(blockquote, nsrc, ssk, swords, threshold)
+        verdict = classify(blockquote, forms, threshold)
         out.setdefault(cid, Counter())[verdict] += 1
     conn.close()
     return out

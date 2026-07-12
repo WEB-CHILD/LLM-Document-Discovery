@@ -9,8 +9,9 @@ from llm_discovery.blockquote_validation import (
     normalise,
     recovers_when_stripped,
     skeleton,
+    source_forms,
+    strip_links,
     verify_corpus,
-    words,
 )
 from llm_discovery.prep_db import sync_categories, sync_documents
 
@@ -28,6 +29,28 @@ class TestNormalise:
     def test_unescapes_markdown(self):
         assert normalise(r"Nevena \(11\), Yugoslavia") == "Nevena (11), Yugoslavia"
 
+    def test_leaves_link_syntax_alone(self):
+        # Link handling is strip_links's job; normalise must not lose the URL,
+        # because quotes legitimately cite URLs as evidence.
+        text = "[Kidlink](http://www.kidlink.org/)"
+        assert normalise(text) == text
+
+
+class TestStripLinks:
+    def test_strips_inline_link_to_its_text(self):
+        assert strip_links("[Kidlink](http://www.kidlink.org/) rules") == (
+            "Kidlink rules"
+        )
+
+    def test_strips_image_to_its_alt_text(self):
+        assert strip_links("![banner](http://x.org/b.gif) hello") == "banner hello"
+
+    def test_nested_image_link_resolves_to_alt(self):
+        assert strip_links("[![logo](http://x.org/l.gif)](http://x.org/)") == "logo"
+
+    def test_escaped_brackets_are_not_treated_as_links(self):
+        assert strip_links(r"see \[a\]\(b\) here") == r"see \[a\]\(b\) here"
+
 
 class TestSkeleton:
     def test_strips_formatting_and_case(self):
@@ -39,21 +62,21 @@ class TestSkeleton:
 
 class TestGroundingRatio:
     def test_exact_substring_scores_100(self):
-        assert grounding_ratio("making new friends", normalise(SOURCE)) == 100
+        assert grounding_ratio("making new friends", source_forms(SOURCE)) == 100
 
     def test_absent_text_scores_low(self):
-        assert grounding_ratio("quarterly earnings exceeded", normalise(SOURCE)) < 70
+        assert grounding_ratio("quarterly earnings exceeded", source_forms(SOURCE)) < 70
 
 
 class TestRecoversWhenStripped:
     def test_markdown_wrapped_real_text_recovers(self):
-        ssk, sw = skeleton(SOURCE), set(words(SOURCE))
-        assert recovers_when_stripped("**making new friends**", ssk, sw) is True
+        forms = source_forms(SOURCE)
+        assert recovers_when_stripped("**making new friends**", forms) is True
 
     def test_fabricated_text_does_not_recover(self):
-        ssk, sw = skeleton(SOURCE), set(words(SOURCE))
+        forms = source_forms(SOURCE)
         quote = "quarterly earnings exceeded forecasts"
-        assert recovers_when_stripped(quote, ssk, sw) is False
+        assert recovers_when_stripped(quote, forms) is False
 
 
 class TestClassifyBlockquote:
@@ -80,6 +103,24 @@ class TestClassifyBlockquote:
     def test_fabrication_is_genuine(self):
         quote = "Quarterly earnings exceeded analyst forecasts."
         assert classify_blockquote(quote, SOURCE) is Verdict.GENUINE
+
+    def test_text_spanning_several_links_is_grounded(self):
+        # The modal corpus case: a verbatim footer whose words are split across
+        # markdown links, so the interleaved URLs previously dropped the fuzzy
+        # score below threshold and broke the skeleton substring.
+        source = (
+            "[Copyright](http://www.kidlink.org/copyright.html) 1990-2004 "
+            "[**Kidlink**](http://www.kidlink.org/) - All rights reserved."
+        )
+        quote = "Copyright 1990-2004 Kidlink - All rights reserved."
+        assert classify_blockquote(quote, source) in (Verdict.EXACT, Verdict.FUZZY)
+
+    def test_quoted_url_stays_grounded(self):
+        # Quotes legitimately cite URLs (governance markers); matching against
+        # the raw source must survive alongside the link-stripped form.
+        source = "Contact us at [Copyright](http://www.kidlink.org/copyright.html)"
+        quote = "http://www.kidlink.org/copyright.html"
+        assert classify_blockquote(quote, source) is Verdict.EXACT
 
 
 class TestVerifyCorpus:

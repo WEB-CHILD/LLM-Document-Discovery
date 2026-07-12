@@ -91,8 +91,8 @@ def make_filename(original_url: str) -> str:
     return name + ".md"
 
 
-def fetch_single(url: str, output_dir: Path) -> Path | None:
-    """Fetch a single URL from Internet Archive and write as markdown.
+def _fetch_markdown_single(url: str, output_dir: Path) -> Path | None:
+    """Fetch a single URL without WARC preservation and write as markdown.
 
     Returns the output path if a new file was created, or None if the file
     already existed (idempotent skip).
@@ -133,7 +133,27 @@ def fetch_single(url: str, output_dir: Path) -> Path | None:
     return output_path
 
 
-def fetch_corpus(urls: list[str] | None, output_dir: Path) -> list[Path]:
+def fetch_single(
+    url: str, output_dir: Path, *, preserve_warc: bool = True
+) -> Path | None:
+    """Fetch one Wayback capture, preserving its response by default.
+
+    Set ``preserve_warc=False`` to use the legacy markdown-only path.
+    """
+    if preserve_warc:
+        # Deferred to avoid the cycle: fetch_warc reuses this module's transforms.
+        from llm_discovery.fetch_warc import fetch_warc_single  # noqa: PLC0415
+
+        return fetch_warc_single(url, output_dir)
+    return _fetch_markdown_single(url, output_dir)
+
+
+def fetch_corpus(
+    urls: list[str] | None,
+    output_dir: Path,
+    *,
+    preserve_warc: bool = True,
+) -> list[Path]:
     """Fetch all URLs and return list of newly created files.
 
     Uses DEFAULT_DEMO_URLS if urls is None. Continues on per-URL errors,
@@ -149,7 +169,7 @@ def fetch_corpus(urls: list[str] | None, output_dir: Path) -> list[Path]:
 
     for url in urls:
         try:
-            result = fetch_single(url, output_dir)
+            result = fetch_single(url, output_dir, preserve_warc=preserve_warc)
             if result is not None:
                 written.append(result)
         except Exception as exc:

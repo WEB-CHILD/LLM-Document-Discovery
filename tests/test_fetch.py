@@ -152,6 +152,7 @@ class TestFetchSingle:
         result = fetch_single(
             "https://web.archive.org/web/20040701020553/http://www.kidlink.org:80/KIDFORUM/",
             tmp_path,
+            preserve_warc=False,
         )
         assert result is not None
         assert result.exists()
@@ -166,11 +167,11 @@ class TestFetchSingle:
         url = "https://web.archive.org/web/20040701020553/http://www.kidlink.org:80/KIDFORUM/"
         # First fetch creates the file
         mock_dl.return_value = "<html><body><p>Content</p></body></html>"
-        fetch_single(url, tmp_path)
+        fetch_single(url, tmp_path, preserve_warc=False)
 
         # Second fetch should skip (return None) without downloading
         mock_dl.reset_mock()
-        result = fetch_single(url, tmp_path)
+        result = fetch_single(url, tmp_path, preserve_warc=False)
         assert result is None
         mock_dl.assert_not_called()
 
@@ -183,6 +184,7 @@ class TestFetchSingle:
             fetch_single(
                 "https://web.archive.org/web/20040701020553/http://www.kidlink.org:80/KIDFORUM/",
                 tmp_path,
+                preserve_warc=False,
             )
         # No files should remain in output dir
         assert list(tmp_path.iterdir()) == []

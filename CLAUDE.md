@@ -2,7 +2,7 @@
 
 Reproducible pipeline for classifying historical web documents (1996-2005) using LLMs on GPU hardware (local RTX 4090 or NCI Gadi HPC).
 
-Freshness: 2026-07-11
+Freshness: 2026-07-12
 
 ## Purpose
 
@@ -74,7 +74,7 @@ Key platform functions:
 - `stage_container_image(platform, project, local_sif) -> str` -- rsync .sif to `/scratch/{project}/containers/`, verify SHA256 post-transfer
 - `generate_hpc_env(gpu_queue) -> str` -- generate shell script exporting vLLM env vars for a queue
 - `upload_model_cache(platform, project, gpu_queue)` -- rsync model weights from local HF cache to remote
-- `upload_data_dir(platform, project, data_dir)` -- rsync data dir (corpus.db, prompts, system_prompt.txt) to remote, excludes hpc_env.sh
+- `upload_data_dir(platform, project, data_dir)` -- rsync assembled data dir (requires corpus.db, system_prompt.txt, hpc_env.sh, and prompts/) to remote `data/`; excludes only `out/`, and raises FileNotFoundError if any required file is missing
 - `submit_ping_job(platform, project, gpu_queue, container_path) -> str` -- submit smoke test PBS job
 - `submit_gadi_job(platform, project, gpu_queue, container_path) -> str` -- submit production PBS job
 - `fetch_remote_file(platform, remote_path) -> str | None` -- cat a file via SSH
@@ -101,7 +101,7 @@ Dev: pytest, pre-commit, ruff, shellcheck-py, ty, complexipy.
 
 - Container entrypoint EXIT trap must always fire (no `set -e`) to kill vLLM background process
 - `.sif` files and `container/` directory are excluded from rsync to remote (staged separately with SHA256 verification)
-- `hpc_env.sh` is excluded from data dir rsync (uploaded separately by `upload_hpc_env`)
+- `hpc_env.sh` reaches the remote by different routes per flow: `init` uploads it on its own via `upload_hpc_env` (`conn.put`, no data-dir rsync), while `deploy` bakes it into the assembled data dir (`_assemble_data_dir`) and ships it inside the `upload_data_dir` rsync (only `out/` is excluded there)
 - PBS template uses `singularity` (not `apptainer`) because Gadi provides Singularity
 - `_GPU_QUEUE_CONFIGS` is the single source of truth for model/GPU parameter mappings
 - Container runs as calling user (not root) -- do not bind to `/root/.cache/huggingface`

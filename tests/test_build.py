@@ -98,8 +98,8 @@ class TestBuildValidate:
         )
 
         assert result.exit_code == 1
-        # Rich may wrap text across lines, so check without newlines
-        flat_output = result.output.replace("\n", " ").lower()
+        # Rich may wrap text anywhere, so collapse all whitespace runs
+        flat_output = " ".join(result.output.split()).lower()
         assert "does not exist" in flat_output
 
     def test_validate_sif_too_small(self, tmp_path, monkeypatch):

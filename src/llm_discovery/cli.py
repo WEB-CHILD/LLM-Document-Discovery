@@ -574,6 +574,7 @@ def _assemble_data_dir(data_dir: Path, gpu_queue: str) -> None:
         raise typer.Exit(1)
 
     # Copy prompts/ (already done by prep_db sync, but ensure they're there)
+    prompts_dir = Path("prompts")
     if prompts_dir.is_dir() and not (data_dir / "prompts").is_dir():
         shutil.copytree(prompts_dir, data_dir / "prompts")
 

@@ -23,6 +23,23 @@ from llm_discovery.platform import (
 )
 
 
+def _mock_remote_df(mock_connection: MagicMock, avail_bytes: int = 10**12) -> MagicMock:
+    """Make a patched ``platform.Connection`` behave like a fabric connection.
+
+    ``upload_model_cache`` runs ``mkdir -p`` then ``df --output=avail`` over
+    fabric before rsyncing, reading the free byte count from
+    ``conn.run().stdout``. Returning a parseable count keeps the remote
+    free-space check satisfied without opening a real SSH connection. Returns
+    the inner mock connection so callers can assert on ``conn.run`` if needed.
+    """
+    conn = MagicMock()
+    df_result = MagicMock()
+    df_result.stdout = f"{avail_bytes}\n"
+    conn.run.return_value = df_result
+    mock_connection.return_value.__enter__ = MagicMock(return_value=conn)
+    return conn
+
+
 class TestLoadPlatforms:
     def test_loads_real_config(self):
         config_path = Path(__file__).parent.parent / "config" / "platforms.yaml"
@@ -353,6 +370,7 @@ class TestRsyncToRemote:
 class TestDeploy:
     """Test that the deploy CLI wires staging functions together correctly."""
 
+    @patch("llm_discovery.cli._assemble_data_dir")
     @patch("llm_discovery.cli._ensure_validated", return_value=True)
     @patch("llm_discovery.platform.Connection")
     @patch("llm_discovery.platform.subprocess.run")
@@ -361,6 +379,7 @@ class TestDeploy:
         mock_subprocess,
         MockConnection,
         _mock_validate,
+        _mock_assemble,
         tmp_path,
     ):
         from typer.testing import CliRunner
@@ -395,14 +414,21 @@ class TestDeploy:
         real_template = Path(__file__).parent.parent / "hpc" / "gadi.pbs.template"
         (tmp_path / "hpc" / "gadi.pbs.template").write_text(real_template.read_text())
 
-        # Create data dir with required files for --data-dir
+        # Create data dir with the files upload_data_dir requires. deploy's
+        # _assemble_data_dir (which runs prep-db/preflight) is mocked out so
+        # this test isolates the staging/upload/submit wiring; the assembled
+        # artefacts it would produce are supplied here directly, including the
+        # baked-in hpc_env.sh.
         data_dir = tmp_path / "data"
         data_dir.mkdir()
         (data_dir / "corpus.db").write_bytes(b"db")
         (data_dir / "system_prompt.txt").write_text("prompt")
+        (data_dir / "hpc_env.sh").write_text("export VLLM_MODEL=x\n")
         (data_dir / "prompts").mkdir()
 
-        # Mock Connection — all platform functions use context manager now
+        # Mock Connection. stage_container_image opens it as a context
+        # manager; submit_gadi_job uses a bare Connection — cover both by
+        # pointing the instance and its __enter__ at the same mock.
         mock_conn = MagicMock()
         mock_sha_result = MagicMock()
         mock_sha_result.stdout = (
@@ -412,8 +438,7 @@ class TestDeploy:
         mock_qsub_result.stdout = "12345.gadi-pbs\n"
         mock_conn.run.side_effect = [
             mock_sha_result,   # mkdir -p containers (stage_container_image)
-            mock_sha_result,   # sha256sum (stage_container_image)
-            mock_sha_result,   # mkdir -p data (upload_hpc_env)
+            mock_sha_result,   # sha256sum verify (stage_container_image)
             mock_qsub_result,  # qsub (submit_gadi_job)
         ]
         MockConnection.return_value = mock_conn
@@ -448,18 +473,17 @@ class TestDeploy:
         sif_rsync = [c for c in rsync_calls if str(sif) in str(c[0][0])]
         assert len(sif_rsync) == 1, "Expected one rsync call for .sif staging"
 
-        # Verify hpc_env.sh uploaded
-        put_calls = mock_conn.put.call_args_list
-        assert len(put_calls) >= 1
-        env_content = put_calls[0][0][0].read()
-        assert "VLLM_MODEL" in env_content
-
     @patch("llm_discovery.cli._ensure_validated", return_value=True)
     @patch("llm_discovery.platform.subprocess.run")
-    def test_deploy_gadi_requires_data_dir(
+    def test_deploy_gadi_requires_project(
         self, _mock_run, _mock_validate, tmp_path, monkeypatch
     ):
-        """AC3.2: deploy without --data-dir for Gadi exits with error."""
+        """AC3.2: deploy for Gadi without --project exits with an error.
+
+        --data-dir is no longer required (it defaults to "data" and deploy
+        assembles it). --project remains a hard requirement for the Gadi
+        path, and this guard fires before any remote work.
+        """
         from typer.testing import CliRunner
 
         from llm_discovery.cli import app
@@ -483,12 +507,11 @@ class TestDeploy:
             [
                 "deploy",
                 "--platform", "gadi",
-                "--project", "ab12",
             ],
         )
 
         assert result.exit_code == 1
-        assert "data-dir" in result.output.lower()
+        assert "project" in result.output.lower()
 
 
 class TestGetGpuQueueConfig:
@@ -511,12 +534,16 @@ class TestGetGpuQueueConfig:
 
 
 class TestUploadModelCache:
+    @patch("llm_discovery.platform.Connection")
     @patch("llm_discovery.platform.subprocess.run")
-    def test_rsync_with_hf_hub_cache(self, mock_run, tmp_path, monkeypatch):
+    def test_rsync_with_hf_hub_cache(
+        self, mock_run, MockConnection, tmp_path, monkeypatch
+    ):
         """AC2.2: Uses $HF_HUB_CACHE when set."""
         monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
         model_dir = tmp_path / "models--google--gemma-4-31B-it"
         model_dir.mkdir()
+        _mock_remote_df(MockConnection)
 
         platform = PlatformConfig(
             display_name="Test",
@@ -532,8 +559,11 @@ class TestUploadModelCache:
         assert str(model_dir) in rsync_args
         assert "gadi.nci.org.au:/scratch/ab12/hf_cache/hub/" in rsync_args
 
+    @patch("llm_discovery.platform.Connection")
     @patch("llm_discovery.platform.subprocess.run")
-    def test_rsync_with_hf_home(self, mock_run, tmp_path, monkeypatch):
+    def test_rsync_with_hf_home(
+        self, mock_run, MockConnection, tmp_path, monkeypatch
+    ):
         """AC2.2: Uses $HF_HOME/hub when $HF_HUB_CACHE unset."""
         monkeypatch.delenv("HF_HUB_CACHE", raising=False)
         monkeypatch.setenv("HF_HOME", str(tmp_path))
@@ -541,6 +571,7 @@ class TestUploadModelCache:
         hub_dir.mkdir()
         model_dir = hub_dir / "models--google--gemma-4-31B-it"
         model_dir.mkdir()
+        _mock_remote_df(MockConnection)
 
         platform = PlatformConfig(
             display_name="Test",
@@ -554,8 +585,11 @@ class TestUploadModelCache:
         rsync_args = mock_run.call_args[0][0]
         assert str(model_dir) in rsync_args
 
+    @patch("llm_discovery.platform.Connection")
     @patch("llm_discovery.platform.subprocess.run")
-    def test_rsync_with_default_cache(self, mock_run, tmp_path, monkeypatch):
+    def test_rsync_with_default_cache(
+        self, mock_run, MockConnection, tmp_path, monkeypatch
+    ):
         """AC2.2: Uses ~/.cache/huggingface/hub when env vars unset."""
         monkeypatch.delenv("HF_HUB_CACHE", raising=False)
         monkeypatch.delenv("HF_HOME", raising=False)
@@ -564,6 +598,7 @@ class TestUploadModelCache:
         model_dir = cache_dir / "models--google--gemma-4-31B-it"
         model_dir.mkdir()
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        _mock_remote_df(MockConnection)
 
         platform = PlatformConfig(
             display_name="Test",
@@ -654,9 +689,12 @@ class TestUploadDataDir:
     @patch("llm_discovery.platform.subprocess.run")
     def test_rsync_with_valid_data_dir(self, mock_run, tmp_path):
         """AC3.1: Rsyncs data dir to remote with correct paths."""
-        # Create required files
+        # Create required files. hpc_env.sh is baked into the data dir by
+        # deploy's _assemble_data_dir and rsynced with the rest, so it must
+        # be present for upload_data_dir's required-file check to pass.
         (tmp_path / "corpus.db").write_bytes(b"db")
         (tmp_path / "system_prompt.txt").write_text("prompt")
+        (tmp_path / "hpc_env.sh").write_text("export VLLM_MODEL=x\n")
         (tmp_path / "prompts").mkdir()
 
         platform = PlatformConfig(
@@ -672,10 +710,16 @@ class TestUploadDataDir:
         assert "gadi.nci.org.au:/scratch/ab12/llm-discovery/data/" in rsync_args
 
     @patch("llm_discovery.platform.subprocess.run")
-    def test_excludes_hpc_env(self, mock_run, tmp_path):
-        """AC3.3: Rsync excludes hpc_env.sh."""
+    def test_excludes_out_dir(self, mock_run, tmp_path):
+        """AC3.3: Rsync excludes the out/ results dir.
+
+        The assembled data dir carries hpc_env.sh (deploy bakes it in and
+        uploads it with the corpus), so the rsync excludes only out/ —
+        results are produced on the remote and must not be clobbered.
+        """
         (tmp_path / "corpus.db").write_bytes(b"db")
         (tmp_path / "system_prompt.txt").write_text("prompt")
+        (tmp_path / "hpc_env.sh").write_text("export VLLM_MODEL=x\n")
         (tmp_path / "prompts").mkdir()
 
         platform = PlatformConfig(
@@ -686,7 +730,7 @@ class TestUploadDataDir:
         upload_data_dir(platform, "ab12", tmp_path)
 
         rsync_args = mock_run.call_args[0][0]
-        assert "--exclude=hpc_env.sh" in rsync_args
+        assert "--exclude=out/" in rsync_args
 
     def test_missing_corpus_db(self, tmp_path):
         """AC3.2: Missing corpus.db raises FileNotFoundError."""

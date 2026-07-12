@@ -32,11 +32,11 @@ category at all rather than one that uses a word the prompt happened not to list
 We built each condition from the forms actually present in this corpus, taking
 the quotes the model cited for a category, ranking the words that appeared in
 them, and adding every form that genuinely names the feature. A form enters a
-condition because it is, for instance, a kinship word in some language, and never
-because the model cited it, so the check cannot fold into agreement with the
-model. Because the corpus is written in many languages, the family condition
-holds kinship terms in English, Danish, Spanish, Portuguese, Norwegian, and
-Korean among others, and the first-person-plural condition adds the verb endings
+condition only when it genuinely names the feature. The mining stage therefore
+uses the model's cited evidence. Semantic curation determines which forms the
+condition retains. Because the corpus is written in many languages, the family
+condition holds kinship terms in English, Danish, Spanish, Portuguese, Norwegian,
+and Korean among others. The first-person-plural condition adds the verb endings
 that carry "we" in Spanish and Portuguese, where the pronoun is usually dropped.
 Age and questions need no such vocabulary, since a digit and a question mark
 carry across languages. A positive verdict is flagged when none of the quotes it
@@ -56,22 +56,25 @@ all is flagged too.
 
 Across the six categories the flag rate runs from a third of a per cent for
 questions to five per cent for age-identity claims, with gendered address the one
-exception at fourteen per cent. Reading the flagged quotes shows that nearly all
-of them are the model classifying correctly on material the literal check cannot
-see, and three causes account for most of it. The largest is language, since the
-corpus is genuinely multilingual and the flagged quotes are full of terms the
-condition does not reach, such as the Spanish niños, the Portuguese crianças, the
-Malay Ibu Bapa, or a Spanish "help us" written as the single word ayúdenos. The
-second is numbers written as words, so that "twelve years old", "fourth grade",
-and the Spanish catorce años are read correctly by the model and missed by a
-condition that looks for a digit. The third is the archived text itself, where
-extraction has run words together or split a letter away, as in "MotherUs
-birthday" or "B ØRN". The genuine errors that remain are few and of the expected
-kind, such as "the ceremony is almost eight hundred years old" taken for a
-person's age, or a place name read as a gendered address. A false-positive rate
-for the model itself therefore sits well below one per cent in every category,
-though that figure rests on reading rather than on a count, because telling a true
-error from a limit of the check is a judgement a person has to make.
+exception at fourteen per cent. The flag rate measures how often cited evidence
+fails the literal condition. Reading a sample of ten flagged verdicts from
+every category (2026-07-12) found two kinds in comparable numbers. In the
+first, the model read correctly and the condition was blind. The corpus is
+genuinely multilingual, and flagged quotes contain terms the condition does
+not reach, such as the Romanian părinţi or the Spanish niños. Numbers are
+written as words, so that "twelve years old" and the Spanish catorce años
+are read correctly by the model and missed by a condition that looks for a
+digit. The archived text itself is damaged, with words run together or a
+letter split away, as in "MotherUs birthday" or "B ØRN". In the second
+kind, the model matched words against their sense and the positive is
+wrong, such as "the ceremony is almost eight hundred years old" taken for
+a person's age, the ages of young eagles offered as age-identity claims,
+or a server name read as a kinship term. Which kind dominates differs by
+category. For explicit age references nearly every flag is the condition's
+blindness, while for age-identity claims most flags are the model's error.
+Distinguishing a classification error from a limit of the condition
+requires human judgement, and a positive whose evidence fails the
+condition deserves a reading before it is trusted.
 
 One column is a count rather than a reading, and it is the clearest result here.
 The last column gives the positive verdicts for which the model cited no
@@ -84,12 +87,9 @@ is worth recording on its own.
 
 The check has a boundary worth stating plainly. It finds a positive whose cited
 evidence carries none of the category's forms, and it cannot see a form used in
-the wrong sense, such as the word old standing for an age in "an old book", so the
-flag rate is not a full measure of precision. What it shows is narrower and still
-useful. On the categories a literal test can reach, the model rarely asserts a
-positive that its own quoted evidence fails to support, and the few clear cases
-are mostly the reach of a multilingual model past a literal check rather than a
-mistake.
+the wrong sense, such as the word old standing for an age in "an old book". The
+reported rate is the share flagged by the literal condition. Precision requires
+human adjudication against the category definition.
 
 ## Appendix: the necessary-condition check
 

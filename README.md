@@ -93,7 +93,7 @@ See [docs/testing-plan-local-4090.md](docs/testing-plan-local-4090.md) for the f
 | `build --validate` | Verify existing container image (size, CLI callable)    |
 | `download-model` | Download model weights to local HF cache for HPC upload   |
 | `init`           | First-time HPC setup: stage container, rsync weights, smoke test |
-| `fetch`          | Download pages from Internet Archive, convert to markdown |
+| `fetch`          | Preserve Internet Archive responses as WARC and convert them to markdown |
 | `prep-db`        | Create and populate corpus database from documents/prompts |
 | `preflight`      | Validate documents in corpus database                     |
 | `process`        | Run LLM classification on document-category pairs (`--system-prompt PATH` and `--prompts-dir PATH` override the default `system_prompt.txt` / `prompts/` locations) |
@@ -110,7 +110,7 @@ Run any command with `--help` for detailed options.
 
 The pipeline executes in stages:
 
-1. **fetch** -- Downloads pages from the Internet Archive Wayback Machine via the `id_` endpoint, converts HTML to markdown with `{timestamp}/{url}` headers.
+1. **fetch** -- Downloads pages from the Internet Archive Wayback Machine via the `id_` endpoint. The default path preserves each response as a WARC file and converts its HTML payload to markdown with a `{timestamp}/{url}` header.
 
 2. **prep-db** -- Creates SQLite database from `schema.sql`, syncs 21 category prompts from `prompts/*.yaml`, syncs documents with SHA-256 change detection and automatic splitting for large documents.
 
@@ -121,6 +121,10 @@ The pipeline executes in stages:
 5. **import-results** -- Reads JSON/JSONL result files and inserts into the database with `INSERT OR IGNORE` idempotency.
 
 On HPC nodes, `scripts/process_corpus.sh` orchestrates the on-node pipeline: installs GPU deps, starts vLLM in tmux, waits for health, runs pipeline steps, kills server on exit.
+
+The WARC-preserving fetch path applies to new fetches. The Kidlink corpus reported
+in the associated article was converted to markdown by an upstream process before
+this repository existed. It was not fetched by this pipeline.
 
 ## Platform Setup
 
